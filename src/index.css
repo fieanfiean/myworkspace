@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+/* ==================================================
+   1. 基础配置 (Base)
+   ================================================== */
+body {
+  background-color: #030712;
+  color: #f8fafc;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* ==================================================
+   2. 结构与面板 (Layout & Containers)
+   ================================================== */
+/* 顶部个人信息 */
+.profile-header-card {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 1.5rem;
+  padding: 2rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 2rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+/* 统计数据块 */
+.stat-box {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  padding: 1rem 1.5rem;
+  border-radius: 1rem;
+  text-align: center;
+}
+
+/* 右侧导出面板 */
+.export-panel-container {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  width: 20rem;
+  position: sticky;
+  top: 1.5rem;
+  height: calc(100vh - 3rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* 拖拽上传区 */
+.drop-zone {
+  border: 2px dashed #334155;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+  transition: border-color 0.2s;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #2563eb;
+  }
+}
+
+/* ==================================================
+   3. 履历卡片组 (Content Cards)
+   ================================================== */
+/* 工作经历卡片 */
+.exp-card {
+  position: relative;
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  margin-left: 2.5rem;
+  transition: all 0.2s ease-in-out;
+
+  &-active {
+    border-color: #2563eb;
+    box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.2);
+  }
+}
+
+/* 教育经历卡片 */
+.edu-card {
+  position: relative;
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  margin-left: 2.5rem;
+}
+
+/* 技能进度的卡片盒 */
+.skill-box {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+}
+
+.skill-bar-bg {
+  width: 100%;
+  height: 0.5rem;
+  background-color: #1e293b;
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.skill-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.5s ease-out;
+}
+
+/* 成就网格卡片 */
+.achievement-card {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 1.25rem;
+  overflow: hidden;
+  transition: transform 0.2s, border-color 0.2s;
+
+  &:hover {
+    transform: translateY(-4px);
+    border-color: #3b82f6;
+  }
+}
+
+/* ==================================================
+   4. UI 控件 (Tags & Buttons)
+   ================================================== */
+/* 标签样式 */
+.tag-chip {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+}
+
+.tag-green {
+  background-color: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #10b981;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+}
+
+/* 基础按钮抽离 */
+.btn-primary-lg,
+.btn-secondary-lg {
+  width: 100%;
+  font-weight: 500;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.btn-primary-lg {
+  background-color: #2563eb;
+  color: #ffffff;
+
+  &:hover {
+    background-color: #1d4ed8;
+  }
+}
+
+.btn-secondary-lg {
+  background-color: #1e293b;
+  color: #ffffff;
+
+  &:hover {
+    background-color: #334155;
+  }
+}
