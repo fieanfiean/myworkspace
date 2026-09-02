@@ -17,7 +17,7 @@ export const initialAboutMeData: AboutMeData = {
     { id: 'tools', title: 'TOOLS & PLATFORMS', color: 'bg-amber-500', skills: [{ id: 's7', name: 'AWS', level: 'Advanced' }, { id: 's8', name: 'Docker', level: 'Expert' }] },
   ],
   achievements: [
-    { id: 'a1', title: 'MIT Hackathon', year: '2023', tag: 'Hackathon', rank: '1st Place', imageUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&auto=format&fit=crop&q=80' },
-    { id: 'a2', title: 'Google Code Jam', year: '2022', tag: 'Competition', rank: 'Top 500 Global', imageUrl: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=600&auto=format&fit=crop&q=80' },
+    { id: 'a1', category: 'project', title: 'MIT Hackathon', year: '2023', tag: 'Hackathon', rank: '1st Place', imageUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&auto=format&fit=crop&q=80' },
+    { id: 'a2', category: 'award', title: 'Google Code Jam', year: '2022', tag: 'Competition', rank: 'Top 500 Global', imageUrl: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=600&auto=format&fit=crop&q=80' },
   ],
 };

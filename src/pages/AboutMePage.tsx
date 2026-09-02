@@ -12,6 +12,7 @@ import { SkillModal } from '@/components/SkillModal';
 import { useProfileData, type ProfileItemSection } from '@/hooks/useProfileData';
 import type { Achievement, EducationItem, Experience, Skill } from '@/types/profile';
 import { initialAboutMeData } from './mockData';
+import { useAuth } from '@/hooks/useAuth';
 
 type Editor =
   | { kind: 'experience'; item?: Experience }
@@ -21,7 +22,8 @@ type Editor =
 type DeleteTarget = { section: ProfileItemSection; id: string };
 
 export function AboutMePage() {
-  const { data, loading, error, addItemToSection, updateItem, deleteItem } = useProfileData('default', initialAboutMeData);
+  const { user } = useAuth();
+  const { data, loading, error, addItemToSection, updateItem, deleteItem } = useProfileData(user?.id ?? 'default', initialAboutMeData);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -51,7 +53,7 @@ export function AboutMePage() {
         <SkillsSection items={data.skillCategories} onAdd={() => setEditor({ kind: 'skill' })} onEdit={(categoryId, item) => setEditor({ kind: 'skill', categoryId, item })} onDelete={id => remove('skillCategories', id)}/>
         <AchievementsSection items={data.achievements} onAdd={() => setEditor({ kind: 'achievement' })} onEdit={item => setEditor({ kind: 'achievement', item })} onDelete={id => remove('achievements', id)}/>
       </main>
-      <ExportPanel/>
+      <ExportPanel data={data}/>
     </div>
 
     {editor?.kind === 'experience' && <AddItemModal kind="experience" open initialValue={editor.item} onClose={closeEditor} onSubmit={item => editor.item ? updateItem('experiences', editor.item.id, item) : addItemToSection('experiences', item)}/>} 

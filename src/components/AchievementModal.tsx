@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { FileText, Link, Upload, X } from 'lucide-react';
 import { uploadCertificateFile } from '@/lib/storage';
-import type { Achievement } from '@/types/profile';
+import type { Achievement, AchievementCategory } from '@/types/profile';
 
 type AchievementFormValue = Omit<Achievement, 'id'>;
 
@@ -16,6 +16,7 @@ const control = 'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-
 
 export function AchievementModal({ open, initialValue, onClose, onSubmit }: AchievementModalProps) {
   const [title, setTitle] = useState(initialValue?.title ?? '');
+  const [category, setCategory] = useState<AchievementCategory>(initialValue?.category ?? 'project');
   const [year, setYear] = useState(initialValue?.year ?? '');
   const [tag, setTag] = useState(initialValue?.tag ?? '');
   const [rank, setRank] = useState(initialValue?.rank ?? '');
@@ -57,6 +58,7 @@ export function AchievementModal({ open, initialValue, onClose, onSubmit }: Achi
     setError(null);
     try {
       await onSubmit({
+        category,
         title: title.trim(),
         year: year.trim(),
         tag: tag.trim(),
@@ -82,6 +84,7 @@ export function AchievementModal({ open, initialValue, onClose, onSubmit }: Achi
       </header>
 
       <form onSubmit={submit} className="grid max-h-[80vh] grid-cols-2 gap-4 overflow-y-auto p-6">
+        <label className="col-span-2 text-sm text-slate-300"><span className="mb-1.5 block font-medium">Category *</span><select className={control} value={category} onChange={event => setCategory(event.target.value as AchievementCategory)}><option value="project">Project</option><option value="award">Award &amp; Honor</option><option value="certification">Certification / Workshop</option></select></label>
         <label className="text-sm text-slate-300"><span className="mb-1.5 block font-medium">Title *</span><input className={control} value={title} onChange={event => setTitle(event.target.value)}/></label>
         <label className="text-sm text-slate-300"><span className="mb-1.5 block font-medium">Year *</span><input className={control} value={year} onChange={event => setYear(event.target.value)}/></label>
         <label className="text-sm text-slate-300"><span className="mb-1.5 block font-medium">Tag</span><input className={control} value={tag} onChange={event => setTag(event.target.value)}/></label>

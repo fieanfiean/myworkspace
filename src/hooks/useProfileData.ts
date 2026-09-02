@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { AboutMeData, Achievement, EducationItem, Experience, Skill, SkillCategory, SkillLevel } from '@/types/profile';
+import type { AboutMeData, Achievement, AchievementCategory, EducationItem, Experience, Skill, SkillCategory, SkillLevel } from '@/types/profile';
 
 type NewExperience = Omit<Experience, 'id'>;
 type NewEducation = Omit<EducationItem, 'id'>;
@@ -36,8 +36,10 @@ function toSkill(row: Row): Skill {
   return { id: text(row.id), name: text(row.name), level: skillLevel(row.level) };
 }
 
+const achievementCategory = (value: unknown): AchievementCategory => ['project', 'award', 'certification'].includes(String(value)) ? value as AchievementCategory : 'award';
+
 function toAchievement(row: Row): Achievement {
-  return { id: text(row.id), title: text(row.title), year: text(row.year), tag: text(row.tag), rank: text(row.rank), imageUrl: text(row.image_url) };
+  return { id: text(row.id), category: achievementCategory(row.category), title: text(row.title), year: text(row.year), tag: text(row.tag), rank: text(row.rank), imageUrl: text(row.image_url) };
 }
 
 function sectionPayload(section: ProfileItemSection, value: Row): Row {
@@ -61,6 +63,7 @@ function sectionPayload(section: ProfileItemSection, value: Row): Row {
     ...(value.badges !== undefined && { badges: value.badges }),
   };
   if (section === 'achievements') return {
+    ...(value.category !== undefined && { category: value.category }),
     ...(value.title !== undefined && { title: value.title }),
     ...(value.year !== undefined && { year: value.year }),
     ...(value.tag !== undefined && { tag: value.tag }),
