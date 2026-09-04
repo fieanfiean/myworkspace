@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { AboutMeData, Achievement, EducationItem, Experience, Skill, SkillCategory, SkillLevel } from '@/types/profile';
+import type { AboutMeData, Achievement, AchievementCategory, EducationItem, Experience, Skill, SkillCategory, SkillLevel } from '@/types/profile';
+import { parseLegacyDateRange, serializeDateRange } from '@/lib/profileStats';
 
 type NewExperience = Omit<Experience, 'id'>;
 type NewEducation = Omit<EducationItem, 'id'>;
@@ -8,6 +9,7 @@ type NewAchievement = Omit<Achievement, 'id'>;
 type NewSkill = Omit<Skill, 'id'>;
 type SkillInput = { categoryId: string; item: NewSkill } | { categoryName: string; item: NewSkill };
 type Row = Record<string, unknown>;
+const ACHIEVEMENT_IMAGE_COLUMN = 'image_url' as const;
 
 export type ProfileItemSection = 'experiences' | 'educations' | 'skillCategories' | 'achievements';
 export type ProfileItemUpdate = Partial<Omit<Experience | EducationItem | Skill | Achievement, 'id'>>;
@@ -25,7 +27,8 @@ const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): 
 const skillLevel = (value: unknown): SkillLevel => ['Beginner', 'Intermediate', 'Advanced', 'Expert'].includes(String(value)) ? value as SkillLevel : 'Beginner';
 
 function toExperience(row: Row): Experience {
-  return { id: text(row.id), type: 'work', title: text(row.title), organization: text(row.organization), location: text(row.location), dateRange: text(row.date_range), details: text(row.details), tags: strings(row.tags), isCurrent: Boolean(row.is_current) };
+  const dates = parseLegacyDateRange(text(row.date_range));
+  return { id: text(row.id), type: 'work', title: text(row.title), organization: text(row.organization), location: text(row.location), ...dates, isCurrent: Boolean(row.is_current) || dates.isCurrent, details: text(row.details), tags: strings(row.tags) };
 }
 
 function toEducation(row: Row): EducationItem {
@@ -36,8 +39,10 @@ function toSkill(row: Row): Skill {
   return { id: text(row.id), name: text(row.name), level: skillLevel(row.level) };
 }
 
+const achievementCategory = (value: unknown): AchievementCategory => ['project', 'award', 'certificate', 'certification'].includes(String(value)) ? value as AchievementCategory : 'award';
+
 function toAchievement(row: Row): Achievement {
-  return { id: text(row.id), title: text(row.title), year: text(row.year), tag: text(row.tag), rank: text(row.rank), imageUrl: text(row.image_url) };
+  return { id: text(row.id), category: achievementCategory(row.category), title: text(row.title), year: text(row.year), tag: text(row.tag), rank: text(row.rank), description: text(row.description), imageUrl: text(row[ACHIEVEMENT_IMAGE_COLUMN]) };
 }
 
 function sectionPayload(section: ProfileItemSection, value: Row): Row {
@@ -45,7 +50,7 @@ function sectionPayload(section: ProfileItemSection, value: Row): Row {
     ...(value.title !== undefined && { title: value.title }),
     ...(value.organization !== undefined && { organization: value.organization }),
     ...(value.location !== undefined && { location: value.location }),
-    ...(value.dateRange !== undefined && { date_range: value.dateRange }),
+    ...((value.startDate !== undefined || value.endDate !== undefined || value.isCurrent !== undefined) && { date_range: serializeDateRange(value as unknown as Pick<Experience, 'startDate' | 'endDate' | 'isCurrent'>) }),
     ...(value.details !== undefined && { details: value.details }),
     ...(value.tags !== undefined && { tags: value.tags }),
     ...(value.isCurrent !== undefined && { is_current: value.isCurrent }),
@@ -61,11 +66,13 @@ function sectionPayload(section: ProfileItemSection, value: Row): Row {
     ...(value.badges !== undefined && { badges: value.badges }),
   };
   if (section === 'achievements') return {
+    ...(value.category !== undefined && { category: value.category }),
     ...(value.title !== undefined && { title: value.title }),
     ...(value.year !== undefined && { year: value.year }),
     ...(value.tag !== undefined && { tag: value.tag }),
     ...(value.rank !== undefined && { rank: value.rank }),
-    ...(value.imageUrl !== undefined && { image_url: value.imageUrl }),
+    ...(value.description !== undefined && { description: value.description }),
+    ...(value.imageUrl !== undefined && { [ACHIEVEMENT_IMAGE_COLUMN]: value.imageUrl }),
   };
   return {
     ...(value.name !== undefined && { name: value.name }),

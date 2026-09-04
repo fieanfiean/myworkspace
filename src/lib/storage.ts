@@ -1,21 +1,37 @@
 import { supabase } from './supabase';
 import imageCompression from 'browser-image-compression';
 
+export const MAX_UPLOAD_SIZE_BYTES = 3 * 1024 * 1024;
+
+async function compressImage(file: File, maxSizeMB: number, maxWidthOrHeight: number): Promise<File> {
+  try {
+    return await imageCompression(file, { maxSizeMB, maxWidthOrHeight, useWebWorker: true });
+  } catch (error) {
+    console.warn('Image compression failed; uploading the original file.', error);
+    return file;
+  }
+}
+
+function errorMetadata(error: unknown): { message: string; details: unknown } {
+  if (typeof error !== 'object' || error === null) return { message: String(error), details: undefined };
+  const record = error as Record<string, unknown>;
+  return {
+    message: typeof record.message === 'string' ? record.message : String(error),
+    details: record.details,
+  };
+}
+
+function logSupabaseError(context: string, error: unknown): void {
+  const { message, details } = errorMetadata(error);
+  console.error(context, { error, message, details });
+}
+
 export async function uploadCertificateFile(file: File): Promise<string> {
   let fileToUpload = file;
 
   // 1. 如果是图片，先进行无损/轻量压缩
   if (file.type.startsWith('image/')) {
-    const options = {
-      maxSizeMB: 0.8,             // 限制体积在 800KB 以内
-      maxWidthOrHeight: 1920,     // 限制分辨率在 1080p
-      useWebWorker: true,
-    };
-    try {
-      fileToUpload = await imageCompression(file, options);
-    } catch (error) {
-      console.warn('图片压缩失败，将直接上传原图:', error);
-    }
+    fileToUpload = await compressImage(file, 0.8, 1920);
   }
 
   // 2. 拼接防重名的文件名
@@ -41,4 +57,41 @@ export async function uploadCertificateFile(file: File): Promise<string> {
     .getPublicUrl(filePath);
 
   return publicUrlData.publicUrl;
+}
+
+export async function uploadProfileAvatar(file: File, userId: string): Promise<string> {
+  if (file.size > MAX_UPLOAD_SIZE_BYTES) throw new Error('File size exceeds 3MB limit');
+  const trimmedUserId = userId.trim();
+  if (!trimmedUserId) throw new Error('Avatar upload failed: userId is required.');
+  if (!file.type.startsWith('image/')) throw new Error('Please choose an image file.');
+
+  const safeUserId = trimmedUserId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (!safeUserId) throw new Error('Avatar upload failed: userId contains no valid path characters.');
+  const compressed = await compressImage(file, 0.35, 1024);
+  const rawExtension = compressed.name.split('.').pop() || 'jpg';
+  const safeExtension = rawExtension.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'jpg';
+  const safeFileName = `${Date.now()}_${crypto.randomUUID().replace(/[^a-zA-Z0-9_-]/g, '')}.${safeExtension}`;
+  const filePath = `profile-avatars/${safeUserId}/${safeFileName}`;
+  let avatarUrl: string;
+
+  try {
+    const { error: storageError } = await supabase.storage.from('certificates').upload(filePath, compressed, { cacheControl: '3600', upsert: false });
+    if (storageError) throw storageError;
+    avatarUrl = supabase.storage.from('certificates').getPublicUrl(filePath).data.publicUrl;
+  } catch (error) {
+    logSupabaseError('Profile avatar Storage upload failed.', error);
+    const { message } = errorMetadata(error);
+    throw new Error(`Storage bucket upload failed: ${message}`, { cause: error });
+  }
+
+  try {
+    const { error: databaseError } = await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', trimmedUserId);
+    if (databaseError) throw databaseError;
+  } catch (error) {
+    logSupabaseError('Profile avatar Database update failed.', error);
+    const { message } = errorMetadata(error);
+    throw new Error(`Database avatar_url update failed: ${message}`, { cause: error });
+  }
+
+  return avatarUrl;
 }
