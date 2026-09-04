@@ -10,17 +10,12 @@ export interface Profile {
   location: string;
   email: string;
   website: string;
-  years_experience: number;
-  projects_count: number;
-  awards_count: number;
+  avatar_url: string;
 }
 
 interface EditProfileModalProps { profile: Profile; onClose: () => void; onSaved: (profile: Profile) => void }
 const textFields: { key: keyof Pick<Profile, 'full_name' | 'headline' | 'company' | 'location' | 'email' | 'website'>; label: string; type?: string }[] = [
   { key: 'full_name', label: 'Full name' }, { key: 'headline', label: 'Headline' }, { key: 'company', label: 'Company' }, { key: 'location', label: 'Location' }, { key: 'email', label: 'Email', type: 'email' }, { key: 'website', label: 'Website', type: 'url' },
-];
-const numberFields: { key: keyof Pick<Profile, 'years_experience' | 'projects_count' | 'awards_count'>; label: string }[] = [
-  { key: 'years_experience', label: 'Years of experience' }, { key: 'projects_count', label: 'Projects count' }, { key: 'awards_count', label: 'Awards count' },
 ];
 
 export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModalProps) {
@@ -36,10 +31,23 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSaving(true); setError(null);
-    const { data, error: saveError } = await supabase.from('profiles').upsert(form, { onConflict: 'id' }).select().single();
+    const payload: Profile = {
+      id: form.id,
+      full_name: form.full_name,
+      headline: form.headline,
+      company: form.company,
+      location: form.location,
+      email: form.email,
+      website: form.website,
+      avatar_url: form.avatar_url,
+    };
+    const { data, error: saveError } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' }).select().single();
     setSaving(false);
     if (saveError) { setError(saveError.message); return; }
-    onSaved({ ...form, ...(data as Partial<Profile>) }); onClose();
+    const savedProfile = { ...payload, ...(data as Partial<Profile>) };
+    onSaved(savedProfile);
+    window.dispatchEvent(new CustomEvent<Profile>('profile-updated', { detail: savedProfile }));
+    onClose();
   };
 
   return (
@@ -49,9 +57,6 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
         <form onSubmit={save} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             {textFields.map(field => <label key={field.key} className="block text-sm font-medium text-slate-300">{field.label}<input type={field.type ?? 'text'} required={field.key === 'full_name' || field.key === 'email'} value={form[field.key]} onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" /></label>)}
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {numberFields.map(field => <label key={field.key} className="block text-sm font-medium text-slate-300">{field.label}<input type="number" min="0" step="1" required value={form[field.key]} onChange={event => setForm(current => ({ ...current, [field.key]: Math.max(0, Number(event.target.value) || 0) }))} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" /></label>)}
           </div>
           {error && <p role="alert" className="rounded-lg border border-red-800 bg-red-950/50 p-3 text-sm text-red-300">{error}</p>}
           <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={onClose} disabled={saving} className="rounded-xl border border-slate-700 px-5 py-2.5 font-medium text-slate-300 transition hover:bg-slate-800 disabled:opacity-50">Cancel</button><button type="submit" disabled={saving} className="rounded-xl bg-blue-600 px-5 py-2.5 font-medium text-white transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-60">{saving ? 'Saving…' : 'Save changes'}</button></div>

@@ -18,9 +18,6 @@ body {
   border: 1px solid #1e293b;
   border-radius: 1.5rem;
   padding: 2rem;
-  display: flex;
-  align-items: flex-start;
-  gap: 2rem;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
 }
 
@@ -28,7 +25,6 @@ body {
 .stat-box {
   background-color: #1e293b;
   border: 1px solid #334155;
-  padding: 1rem 1.5rem;
   border-radius: 1rem;
   text-align: center;
 }
@@ -38,28 +34,9 @@ body {
   background-color: #0f172a;
   border: 1px solid #1e293b;
   border-radius: 1.5rem;
-  padding: 1.5rem;
   width: 20rem;
   position: sticky;
   top: 1.5rem;
-  height: calc(100vh - 3rem);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-
-/* 拖拽上传区 */
-.drop-zone {
-  border: 2px dashed #334155;
-  border-radius: 1rem;
-  padding: 1.5rem;
-  text-align: center;
-  transition: border-color 0.2s;
-  cursor: pointer;
-
-  &:hover {
-    border-color: #2563eb;
-  }
 }
 
 /* ==================================================
