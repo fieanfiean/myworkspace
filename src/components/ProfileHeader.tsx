@@ -99,8 +99,8 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
   return (
     <>
       <section className="profile-header-card">
-        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-stretch gap-4 sm:gap-6">
-          <div className="group relative size-28 shrink-0 self-center sm:size-32">
+        <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-6">
+          <div className="group relative size-24 shrink-0 justify-self-center sm:size-32 sm:justify-self-auto">
             {profile.avatar_url
               ? <img src={profile.avatar_url} alt={t('profile.avatar.alt', { name: profile.full_name })} className="size-full rounded-2xl object-cover" />
               : <div className="flex size-full items-center justify-center rounded-2xl bg-blue-600 text-4xl font-bold text-white sm:text-5xl">{initials(profile.full_name)}</div>}
@@ -115,7 +115,7 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
               <button type="button" onClick={() => setEditing(true)} className="shrink-0 rounded-lg border border-slate-700 p-2 text-slate-400 transition hover:border-blue-500 hover:bg-slate-800 hover:text-blue-400" aria-label="Edit profile"><Pencil size={17} /></button>
             </div>
             {(profile.headline || profile.company) && <p className="truncate text-sm text-slate-400 sm:text-lg">{profile.headline}{profile.headline && profile.company ? ' · ' : ''}{profile.company && <span className="text-slate-200">{profile.company}</span>}</p>}
-            <div className="flex min-w-0 items-center gap-x-3 overflow-hidden text-xs text-slate-400 sm:text-sm">
+            <div className="flex min-w-0 flex-col items-start gap-2 text-xs text-slate-400 sm:flex-row sm:items-center sm:gap-x-3 sm:overflow-hidden sm:text-sm">
               {profile.location && <span className="flex shrink-0 items-center gap-1.5"><MapPin className="shrink-0" size={16} /><span className="max-w-36 truncate sm:max-w-52">{profile.location}</span></span>}
               {profile.location && profile.email && <span aria-hidden="true" className="shrink-0 text-slate-600">·</span>}
               {profile.email && <a className="flex min-w-0 items-center gap-1.5 hover:text-blue-400" href={`mailto:${profile.email}`} title={profile.email}><Mail className="shrink-0" size={16} /><span className="truncate">{profile.email}</span></a>}
@@ -125,7 +125,7 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
           </div>
         </div>
         {error && <p role="alert" className="mt-4 text-sm text-amber-400">Profile could not be synchronized: {error}</p>}
-        <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        <div className="mt-6 grid grid-cols-1 gap-3 min-[375px]:grid-cols-2 md:grid-cols-4 md:gap-4">
           {stats.map(stat => <div key={stat.value} className="stat-box min-w-0 px-2 py-4 sm:px-6"><div className="text-2xl font-extrabold text-blue-400 sm:text-3xl">{stat.label}</div><div className="mt-1 truncate text-[0.625rem] uppercase tracking-wider text-slate-400 sm:text-xs" title={stat.value}>{stat.value}</div></div>)}
         </div>
       </section>

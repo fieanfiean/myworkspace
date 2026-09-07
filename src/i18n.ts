@@ -4,7 +4,16 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 const resources = {
   en: { translation: {
-    sidebar: { workspace: 'My Workspace', navigation: 'Main navigation', profile: 'My Profile', budget: 'Budget Tracker', expand: 'Expand sidebar', collapse: 'Collapse sidebar', switchLanguage: 'Switch language' },
+    theme: { switchToLight: 'Switch to light mode', switchToDark: 'Switch to dark mode' },
+    sidebar: { workspace: 'My Workspace', navigation: 'Main navigation', profile: 'My Profile', budget: 'Budget Tracker', expand: 'Expand sidebar', collapse: 'Collapse sidebar', openMenu: 'Open navigation menu', closeMenu: 'Close navigation menu', switchLanguage: 'Switch language' },
+    budget: {
+      title: 'Budget Tracker', subtitle: 'A clear view of your income, spending, and cash flow.', income: 'Income', expense: 'Expense', loading: 'Loading transactions…',
+      stats: { totalBalance: 'Total Balance', monthlyIncome: 'Monthly Income', monthlyExpenses: 'Monthly Expenses', updatedToday: 'Updated today', vsLastMonth: '{{value}} vs last month' },
+      chart: { title: 'Income vs Expenses', period: 'Last 6 months' },
+      recent: { title: 'Recent Transactions', count_one: '{{count}} transaction', count_other: '{{count}} transactions', date: 'Date', description: 'Description', category: 'Category', amount: 'Amount', empty: 'No transactions yet. Add your first one to get started.' },
+      form: { title: 'Add Transaction', subtitle: 'Record income or an expense', type: 'Type', amount: 'Amount', description: 'Description', descriptionPlaceholder: 'e.g. Grocery run', date: 'Date', category: 'Category', save: 'Save Transaction', saving: 'Saving…', validation: 'Enter a description and an amount greater than zero.', saveError: 'Unable to save the transaction.' },
+      categories: { salary: 'Salary', groceries: 'Groceries', food: 'Food', transport: 'Transport', utilities: 'Utilities', entertainment: 'Entertainment', freelance: 'Freelance', healthcare: 'Healthcare', other: 'Other' },
+    },
     profile: { stats: { experience: 'Years experience', projects: 'Projects', awards: 'Awards', certificates: 'Certificates' }, avatar: { alt: '{{name}} profile photo', change: 'Upload or change profile photo', uploadError: 'Unable to upload profile photo.' } },
     account: { user: 'User', manage: 'Manage account', logout: 'Logout', signingOut: 'Signing out…', signOutError: 'Unable to sign out.' },
     achievements: { downloadPdf: 'Download PDF', downloadImage: 'Download image', viewDetails: 'View Details', noTag: 'No tag', noDescription: 'No description provided.', categories: { project: 'Project', award: 'Award', certificate: 'Certificate', certification: 'Certification' } },
@@ -15,7 +24,16 @@ const resources = {
     exportPanel: { title: 'Resume Generator', selectSections: 'SELECT SECTIONS', sections: { experience: 'Include Work Experience', education: 'Include Education', skills: 'Include Skills & Tools', achievements: 'Include Achievements', publications: 'Include Publications', certifications: 'Include Certifications' }, btnExportCv: 'Export as CV', btnExportResume: 'Export as Resume' },
   } },
   zh: { translation: {
-    sidebar: { workspace: '我的工作空间', navigation: '主导航', profile: '个人主页', budget: '预算管理', expand: '展开侧边栏', collapse: '收起侧边栏', switchLanguage: '切换语言' },
+    theme: { switchToLight: '切换到浅色模式', switchToDark: '切换到深色模式' },
+    budget: {
+      title: '预算管理', subtitle: '清晰掌握你的收入、支出与现金流。', income: '收入', expense: '支出', loading: '正在加载交易…',
+      stats: { totalBalance: '总余额', monthlyIncome: '本月收入', monthlyExpenses: '本月支出', updatedToday: '今日已更新', vsLastMonth: '较上月 {{value}}' },
+      chart: { title: '收入与支出', period: '最近 6 个月' },
+      recent: { title: '最近交易', count: '{{count}} 笔交易', date: '日期', description: '描述', category: '类别', amount: '金额', empty: '暂无交易，添加第一笔记录即可开始。' },
+      form: { title: '新增交易', subtitle: '记录一笔收入或支出', type: '类型', amount: '金额', description: '描述', descriptionPlaceholder: '例如：采购日用品', date: '日期', category: '类别', save: '保存交易', saving: '正在保存…', validation: '请输入描述和大于零的金额。', saveError: '无法保存这笔交易。' },
+      categories: { salary: '薪资', groceries: '日用品', food: '餐饮', transport: '交通', utilities: '水电账单', entertainment: '娱乐', freelance: '自由职业', healthcare: '医疗保健', other: '其他' },
+    },
+    sidebar: { workspace: '我的工作空间', navigation: '主导航', profile: '个人主页', budget: '预算管理', expand: '展开侧边栏', collapse: '收起侧边栏', openMenu: '打开导航菜单', closeMenu: '关闭导航菜单', switchLanguage: '切换语言' },
     profile: { stats: { experience: '工作年限', projects: '项目', awards: '奖项', certificates: '证书数量' }, avatar: { alt: '{{name}} 的个人头像', change: '上传或更换个人头像', uploadError: '无法上传个人头像。' } },
     account: { user: '用户', manage: '管理账号', logout: '退出登录', signingOut: '正在退出…', signOutError: '无法退出登录。' },
     achievements: { downloadPdf: '下载 PDF', downloadImage: '下载图片', viewDetails: '查看详情', noTag: '无标签', noDescription: '暂无描述。', categories: { project: '项目', award: '奖项', certificate: '证书', certification: '认证' } },

@@ -51,8 +51,8 @@ export function AboutMePage() {
 
   return <>
     {error && <div role="alert" className="mb-4 rounded-lg border border-red-800 bg-red-950/50 p-3 text-sm text-red-300">{error.message}</div>}
-    <div className="mx-auto flex max-w-7xl items-start gap-8">
-      <main className="min-w-0 flex-1 space-y-4">
+    <div className="mx-auto flex max-w-7xl flex-col items-stretch gap-5 xl:flex-row xl:items-start xl:gap-8">
+      <main className="w-full min-w-0 flex-1 space-y-4">
         <ProfileHeader experiences={sortedData.experiences} achievements={sortedData.achievements}/>
         <ExperienceList items={sortedData.experiences} onAdd={() => setEditor({ kind: 'experience' })} onEdit={item => setEditor({ kind: 'experience', item })} onDelete={id => remove('experiences', id)}/>
         <EducationSection items={sortedData.educations} onAdd={() => setEditor({ kind: 'education' })} onEdit={item => setEditor({ kind: 'education', item })} onDelete={id => remove('educations', id)}/>

@@ -1,12 +1,20 @@
+@config "../tailwind.config.js";
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ==================================================
    1. 基础配置 (Base)
    ================================================== */
 body {
-  background-color: #030712;
-  color: #f8fafc;
+  background-color: #f8fafc;
+  color: #0f172a;
   font-family: system-ui, -apple-system, sans-serif;
+  transition: background-color 300ms ease, color 300ms ease;
+}
+
+.dark body {
+  background-color: #0b0f17;
+  color: #f8fafc;
 }
 
 /* ==================================================
@@ -14,30 +22,39 @@ body {
    ================================================== */
 /* 顶部个人信息 */
 .profile-header-card {
-  background-color: #0f172a;
-  border: 1px solid #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 1.5rem;
-  padding: 2rem;
+  padding: 1rem;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.08);
+}
+
+.dark .profile-header-card {
+  background-color: #161b26;
+  border-color: #1e293b;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
 }
 
 /* 统计数据块 */
 .stat-box {
-  background-color: #1e293b;
-  border: 1px solid #334155;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 1rem;
   text-align: center;
 }
 
+.dark .stat-box { background-color: #1e293b; border-color: #334155; }
+
 /* 右侧导出面板 */
 .export-panel-container {
-  background-color: #0f172a;
-  border: 1px solid #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 1.5rem;
-  width: 20rem;
-  position: sticky;
-  top: 1.5rem;
+  width: 100%;
+  position: static;
 }
+
+.dark .export-panel-container { background-color: #161b26; border-color: #1e293b; }
 
 /* ==================================================
    3. 履历卡片组 (Content Cards)
@@ -45,11 +62,11 @@ body {
 /* 工作经历卡片 */
 .exp-card {
   position: relative;
-  background-color: #0f172a;
-  border: 1px solid #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 1rem;
   padding: 1.5rem;
-  margin-left: 2.5rem;
+  margin-left: 0;
   transition: all 0.2s ease-in-out;
 
   &-active {
@@ -58,23 +75,29 @@ body {
   }
 }
 
+.dark .exp-card { background-color: #161b26; border-color: #1e293b; }
+
 /* 教育经历卡片 */
 .edu-card {
   position: relative;
-  background-color: #0f172a;
-  border: 1px solid #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 1.25rem;
   padding: 1.5rem;
-  margin-left: 2.5rem;
+  margin-left: 0;
 }
+
+.dark .edu-card { background-color: #161b26; border-color: #1e293b; }
 
 /* 技能进度的卡片盒 */
 .skill-box {
-  background-color: #0f172a;
-  border: 1px solid #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 1.25rem;
   padding: 1.5rem;
 }
+
+.dark .skill-box { background-color: #161b26; border-color: #1e293b; }
 
 .skill-bar-bg {
   width: 100%;
@@ -93,8 +116,8 @@ body {
 
 /* 成就网格卡片 */
 .achievement-card {
-  background-color: #0f172a;
-  border: 1px solid #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 1.25rem;
   overflow: hidden;
   transition: transform 0.2s, border-color 0.2s;
@@ -104,6 +127,49 @@ body {
     border-color: #3b82f6;
   }
 }
+
+.dark .achievement-card { background-color: #161b26; border-color: #1e293b; }
+
+@media (min-width: 640px) {
+  .profile-header-card { padding: 2rem; }
+  .exp-card, .edu-card { margin-left: 2.5rem; }
+}
+
+@media (min-width: 1280px) {
+  .export-panel-container { width: 20rem; position: sticky; top: 1.5rem; }
+}
+
+@media (max-width: 639px) {
+  .mobile-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .mobile-form-grid > * { grid-column: 1 / -1; }
+  .mobile-form-grid footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mobile-form-grid footer > button { min-height: 44px; padding-inline: 0.75rem; }
+}
+
+/* Legacy utility palette bridge: keeps every existing page/modal readable while
+   components are progressively moved to explicit light/dark utility pairs. */
+html:not(.dark) .bg-slate-950 { background-color: #f8fafc; }
+html:not(.dark) .bg-slate-900 { background-color: #ffffff; }
+html:not(.dark) .bg-slate-800 { background-color: #f1f5f9; }
+html:not(.dark) .bg-slate-700 { background-color: #e2e8f0; }
+html:not(.dark) .bg-slate-900\/80,
+html:not(.dark) .bg-slate-900\/90 { background-color: rgba(255, 255, 255, 0.96); }
+html:not(.dark) .bg-slate-950\/40,
+html:not(.dark) .bg-slate-950\/50,
+html:not(.dark) .bg-slate-950\/60,
+html:not(.dark) .bg-slate-950\/65,
+html:not(.dark) .bg-slate-950\/80 { background-color: rgba(248, 250, 252, 0.92); }
+html:not(.dark) .border-slate-800,
+html:not(.dark) .border-slate-700,
+html:not(.dark) .border-slate-600 { border-color: #e2e8f0; }
+html:not(.dark) .text-white,
+html:not(.dark) .text-slate-100,
+html:not(.dark) .text-slate-200 { color: #0f172a; }
+html:not(.dark) .text-slate-300 { color: #334155; }
+html:not(.dark) .text-slate-400 { color: #475569; }
+html:not(.dark) .text-slate-500 { color: #64748b; }
+html:not(.dark) :is(.bg-blue-600,.bg-indigo-600,.bg-red-600,.bg-rose-800,.bg-emerald-700,.btn-primary-lg),
+html:not(.dark) :is(.bg-blue-600,.bg-indigo-600,.bg-red-600,.bg-rose-800,.bg-emerald-700,.btn-primary-lg) * { color: #ffffff; }
 
 /* ==================================================
    4. UI 控件 (Tags & Buttons)
