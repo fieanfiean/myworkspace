@@ -69,6 +69,9 @@
 - **UI & Analytics**: 账户余额、本月收支统计（带百分比变化）、Recharts 6 个月 Area Chart。
 - **Categories**: Salary, Groceries, Food (餐饮), Transport, Utilities, Entertainment, Freelance, Healthcare, Other.
 - 支持 Supabase Realtime 多端同步。
+- **Multi-Currency Architecture**: MYR is the base currency used by Total Balance, monthly metrics, and Recharts aggregation. `transactions.amount` stores the converted MYR amount, while `original_currency`, `original_amount`, and `exchange_rate` preserve the source transaction. Quick Add supports MYR, USD, SGD, JPY, EUR, GBP, CNY, THB, and TWD; foreign-currency rows display both MYR and original values.
+- **Transaction CRUD**: Recent transactions expose mobile-friendly Edit/Delete actions. Editing preserves and recalculates every base/original currency field; deletion uses a confirmation dialog. Both mutations re-fetch transactions so dashboard totals and charts stay synchronized.
+- **Automatic Exchange Rates**: Selecting a foreign currency in Quick Add or Edit fetches MYR-based rates from the no-key Open ExchangeRate-API endpoint, converts the returned quote to MYR-per-foreign-unit, and keeps the populated rate manually editable. Requests are cached in memory and failures fall back to manual rate entry with a user-facing warning and provider attribution.
 
 ### C. Theme System
 - 集中式 `ThemeContext` 控制 `<html>` 的 `.dark` 类，支持 `localStorage` 记忆与系统偏好切换。

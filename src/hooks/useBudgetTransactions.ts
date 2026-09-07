@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { BudgetTransaction, NewBudgetTransaction, TransactionCategory, TransactionType } from '@/types/budget';
+import type { BudgetTransaction, CurrencyCode, NewBudgetTransaction, TransactionCategory, TransactionType } from '@/types/budget';
 
 interface TransactionRow {
   id: string;
@@ -11,6 +11,9 @@ interface TransactionRow {
   date: string;
   category: TransactionCategory;
   created_at: string;
+  original_currency: CurrencyCode | null;
+  original_amount: number | string | null;
+  exchange_rate: number | string | null;
 }
 
 const fromRow = (row: TransactionRow): BudgetTransaction => ({
@@ -22,6 +25,9 @@ const fromRow = (row: TransactionRow): BudgetTransaction => ({
   transactionDate: row.date,
   category: row.category,
   createdAt: row.created_at,
+  originalCurrency: row.original_currency ?? undefined,
+  originalAmount: row.original_amount === null ? undefined : Number(row.original_amount),
+  exchangeRate: row.exchange_rate === null ? undefined : Number(row.exchange_rate),
 });
 
 export function useBudgetTransactions(userId: string | undefined) {
@@ -39,7 +45,7 @@ export function useBudgetTransactions(userId: string | undefined) {
     setLoading(true);
     const { data, error: queryError } = await supabase
       .from('transactions')
-      .select('id,profile_id,type,amount,description,date,category,created_at')
+      .select('id,profile_id,type,amount,description,date,category,created_at,original_currency,original_amount,exchange_rate')
       .eq('profile_id', userId)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -78,10 +84,36 @@ export function useBudgetTransactions(userId: string | undefined) {
       description: transaction.description.trim(),
       date: transaction.transactionDate,
       category: transaction.category,
+      original_currency: transaction.originalCurrency ?? 'MYR',
+      original_amount: transaction.originalAmount ?? transaction.amount,
+      exchange_rate: transaction.exchangeRate ?? 1,
     });
     if (insertError) throw new Error(insertError.message);
     await refresh();
   }, [refresh, userId]);
 
-  return { transactions, loading, error, refresh, addTransaction };
+  const updateTransaction = useCallback(async (id: string, transaction: NewBudgetTransaction) => {
+    if (!userId) throw new Error('Missing authenticated user.');
+    const { error: updateError } = await supabase.from('transactions').update({
+      type: transaction.type,
+      amount: transaction.amount,
+      description: transaction.description.trim(),
+      date: transaction.transactionDate,
+      category: transaction.category,
+      original_currency: transaction.originalCurrency ?? 'MYR',
+      original_amount: transaction.originalAmount ?? transaction.amount,
+      exchange_rate: transaction.exchangeRate ?? 1,
+    }).eq('id', id).eq('profile_id', userId);
+    if (updateError) throw new Error(updateError.message);
+    await refresh();
+  }, [refresh, userId]);
+
+  const deleteTransaction = useCallback(async (id: string) => {
+    if (!userId) throw new Error('Missing authenticated user.');
+    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id).eq('profile_id', userId);
+    if (deleteError) throw new Error(deleteError.message);
+    await refresh();
+  }, [refresh, userId]);
+
+  return { transactions, loading, error, refresh, addTransaction, updateTransaction, deleteTransaction };
 }

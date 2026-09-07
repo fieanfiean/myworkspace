@@ -1,4 +1,5 @@
 export type TransactionType = 'income' | 'expense';
+export type CurrencyCode = 'MYR' | 'USD' | 'SGD' | 'JPY' | 'EUR' | 'GBP' | 'CNY' | 'THB' | 'TWD';
 
 export type TransactionCategory =
   | 'salary'
@@ -20,6 +21,9 @@ export interface BudgetTransaction {
   transactionDate: string;
   category: TransactionCategory;
   createdAt: string;
+  originalCurrency?: CurrencyCode;
+  originalAmount?: number;
+  exchangeRate?: number;
 }
 
 export interface NewBudgetTransaction {
@@ -28,4 +32,7 @@ export interface NewBudgetTransaction {
   description: string;
   transactionDate: string;
   category: TransactionCategory;
+  originalCurrency?: CurrencyCode;
+  originalAmount?: number;
+  exchangeRate?: number;
 }
