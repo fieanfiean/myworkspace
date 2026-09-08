@@ -85,7 +85,7 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
 
   return (<>
     <button type="button" aria-label={t('sidebar.closeMenu')} onClick={onMobileClose} className={`fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm transition-opacity md:hidden ${mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`} />
-    <aside className={`fixed left-0 top-0 z-50 flex h-dvh w-72 flex-col justify-between border-r border-slate-800 bg-slate-900 p-6 text-white transition-[transform,width] duration-300 ease-in-out md:z-40 md:h-screen md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${isCollapsed ? 'md:w-16 md:px-2 md:py-6' : 'md:w-64 md:p-6'}`}>
+    <aside data-swipe-drawer="left" className={`fixed left-0 top-0 z-50 flex h-dvh w-72 touch-pan-y flex-col justify-between overscroll-x-contain border-r border-slate-800 bg-slate-900 p-6 text-white transition-[transform,width] duration-300 ease-in-out md:z-40 md:h-screen md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${isCollapsed ? 'md:w-16 md:px-2 md:py-6' : 'md:w-64 md:p-6'}`}>
       <div className="min-w-0">
         <div className={`mb-8 flex items-center justify-between gap-3 ${isCollapsed ? 'md:flex-col' : ''}`}>
           <h1 className="min-w-0 truncate font-bold text-blue-400" aria-label={t('sidebar.workspace')}>

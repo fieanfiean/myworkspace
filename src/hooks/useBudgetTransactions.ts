@@ -94,7 +94,7 @@ export function useBudgetTransactions(userId: string | undefined) {
 
   const updateTransaction = useCallback(async (id: string, transaction: NewBudgetTransaction) => {
     if (!userId) throw new Error('Missing authenticated user.');
-    const { error: updateError } = await supabase.from('transactions').update({
+    const { data: updated, error: updateError } = await supabase.from('transactions').update({
       type: transaction.type,
       amount: transaction.amount,
       description: transaction.description.trim(),
@@ -103,8 +103,9 @@ export function useBudgetTransactions(userId: string | undefined) {
       original_currency: transaction.originalCurrency ?? 'MYR',
       original_amount: transaction.originalAmount ?? transaction.amount,
       exchange_rate: transaction.exchangeRate ?? 1,
-    }).eq('id', id).eq('profile_id', userId);
+    }).eq('id', id).eq('profile_id', userId).select('id').maybeSingle();
     if (updateError) throw new Error(updateError.message);
+    if (!updated) throw new Error('Transaction was not updated. Check the update RLS policy.');
     await refresh();
   }, [refresh, userId]);
 

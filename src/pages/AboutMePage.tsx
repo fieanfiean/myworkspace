@@ -14,6 +14,8 @@ import type { Achievement, EducationItem, Experience, Skill } from '@/types/prof
 import { initialAboutMeData } from './mockData';
 import { useAuth } from '@/hooks/useAuth';
 import { sortEducationsByMostRecent, sortExperiencesByMostRecent } from '@/lib/timelineSort';
+import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 type Editor =
   | { kind: 'experience'; item?: Experience }
@@ -22,7 +24,8 @@ type Editor =
   | { kind: 'achievement'; item?: Achievement };
 type DeleteTarget = { section: ProfileItemSection; id: string };
 
-export function AboutMePage() {
+export function AboutMePage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; onCloseTools: () => void }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const { data, loading, error, addItemToSection, updateItem, deleteItem } = useProfileData(user?.id ?? 'default', initialAboutMeData);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -59,7 +62,11 @@ export function AboutMePage() {
         <SkillsSection items={data.skillCategories} onAdd={() => setEditor({ kind: 'skill' })} onEdit={(categoryId, item) => setEditor({ kind: 'skill', categoryId, item })} onDelete={id => remove('skillCategories', id)}/>
         <AchievementsSection items={data.achievements} onAdd={() => setEditor({ kind: 'achievement' })} onEdit={item => setEditor({ kind: 'achievement', item })} onDelete={id => remove('achievements', id)}/>
       </main>
-      <ExportPanel data={sortedData}/>
+      <button type="button" aria-label={t('sidebar.closeTools')} onClick={onCloseTools} className={`fixed inset-0 z-[55] bg-slate-950/60 backdrop-blur-sm transition-opacity md:hidden ${toolsOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}/>
+      <div data-swipe-drawer="right" className={`fixed inset-y-0 right-0 z-[60] w-[min(22rem,calc(100vw-2rem))] touch-pan-y overflow-y-auto overscroll-x-contain bg-slate-50 p-4 shadow-2xl transition-transform duration-300 md:static md:z-auto md:w-full md:translate-x-0 md:overflow-visible md:bg-transparent md:p-0 md:shadow-none xl:w-auto dark:bg-[#0B0F17] md:dark:bg-transparent ${toolsOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="mb-3 flex items-center justify-between md:hidden"><span className="font-semibold">{t('exportPanel.title')}</span><button type="button" onClick={onCloseTools} aria-label={t('sidebar.closeTools')} className="flex size-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-800"><X size={20}/></button></div>
+        <ExportPanel data={sortedData}/>
+      </div>
     </div>
 
     {editor?.kind === 'experience' && <AddItemModal kind="experience" open initialValue={editor.item} onClose={closeEditor} onSubmit={item => editor.item ? updateItem('experiences', editor.item.id, item) : addItemToSection('experiences', item)}/>} 

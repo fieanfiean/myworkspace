@@ -54,6 +54,10 @@
    - 移动端所有交互元素（按钮、输入框、Select）必须保持至少 `44px` 的触控高度。
    - 外层主容器必须包含 `overflow-x-hidden`，严禁出现页面整体横向滚动条。
    - Modal 弹窗在手机上必须支持自适应滚动，防止键盘弹出时遮挡提交按钮。
+4. **双侧手势抽屉（Bidirectional Gesture Drawers）**：
+   - 移动端从左侧 30px 边缘右滑打开导航 Drawer，Drawer 内左滑关闭。
+   - 从右侧 30px 边缘左滑打开当前页面工具 Drawer（Profile Resume Generator / Budget Quick Add），Drawer 内右滑关闭。
+   - 顶部语言、主题与工具控制栏保持 `sticky` 毛玻璃样式；抽屉必须同时提供可点击按钮与遮罩，不能只依赖手势。
 
 ---
 
@@ -72,6 +76,12 @@
 - **Multi-Currency Architecture**: MYR is the base currency used by Total Balance, monthly metrics, and Recharts aggregation. `transactions.amount` stores the converted MYR amount, while `original_currency`, `original_amount`, and `exchange_rate` preserve the source transaction. Quick Add supports MYR, USD, SGD, JPY, EUR, GBP, CNY, THB, and TWD; foreign-currency rows display both MYR and original values.
 - **Transaction CRUD**: Recent transactions expose mobile-friendly Edit/Delete actions. Editing preserves and recalculates every base/original currency field; deletion uses a confirmation dialog. Both mutations re-fetch transactions so dashboard totals and charts stay synchronized.
 - **Automatic Exchange Rates**: Selecting a foreign currency in Quick Add or Edit fetches MYR-based rates from the no-key Open ExchangeRate-API endpoint, converts the returned quote to MYR-per-foreign-unit, and keeps the populated rate manually editable. Requests are cached in memory and failures fall back to manual rate entry with a user-facing warning and provider attribution.
+- **Filtering & Interactive Analytics**: `filteredTransactions` combines description/category search, category and income/expense filters, plus this-week, this-month, last-three-months, or custom date ranges. The same filtered collection drives the transaction list and Recharts data. Charts support Daily/Weekly/Monthly aggregation and a scrollbar-free, dynamically sized horizontal pan viewport (native touch plus mouse drag; no Recharts `Brush`).
+- **Transaction Security**: Updates are scoped by both transaction `id` and the authenticated `profile_id`; the canonical UPDATE RLS policy is `Users can update their own transactions` with matching `USING` and `WITH CHECK` ownership conditions.
+
+### Mobile Drawer Gesture Safety
+- Drawer-open swipes use a broad 16–80px activation band from either screen edge. Opening is directional and only allowed while both drawers are closed; any qualifying horizontal swipe dismisses an open drawer before another can open.
+- Drawer containers allow vertical panning while containing horizontal overscroll. Visible header buttons remain the non-gesture fallback for navigation and tools.
 
 ### C. Theme System
 - 集中式 `ThemeContext` 控制 `<html>` 的 `.dark` 类，支持 `localStorage` 记忆与系统偏好切换。
