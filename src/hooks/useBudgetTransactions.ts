@@ -9,6 +9,7 @@ interface TransactionRow {
   amount: number | string;
   description: string;
   date: string;
+  transaction_time: string | null;
   category: TransactionCategory;
   created_at: string;
   original_currency: CurrencyCode | null;
@@ -23,6 +24,7 @@ const fromRow = (row: TransactionRow): BudgetTransaction => ({
   amount: Number(row.amount),
   description: row.description,
   transactionDate: row.date,
+  transaction_time: row.transaction_time ?? undefined,
   category: row.category,
   createdAt: row.created_at,
   originalCurrency: row.original_currency ?? undefined,
@@ -45,7 +47,7 @@ export function useBudgetTransactions(userId: string | undefined) {
     setLoading(true);
     const { data, error: queryError } = await supabase
       .from('transactions')
-      .select('id,profile_id,type,amount,description,date,category,created_at,original_currency,original_amount,exchange_rate')
+      .select('id,profile_id,type,amount,description,date,transaction_time,category,created_at,original_currency,original_amount,exchange_rate')
       .eq('profile_id', userId)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -83,6 +85,7 @@ export function useBudgetTransactions(userId: string | undefined) {
       amount: transaction.amount,
       description: transaction.description.trim(),
       date: transaction.transactionDate,
+      transaction_time: transaction.transaction_time || null,
       category: transaction.category,
       original_currency: transaction.originalCurrency ?? 'MYR',
       original_amount: transaction.originalAmount ?? transaction.amount,
@@ -99,6 +102,7 @@ export function useBudgetTransactions(userId: string | undefined) {
       amount: transaction.amount,
       description: transaction.description.trim(),
       date: transaction.transactionDate,
+      transaction_time: transaction.transaction_time || null,
       category: transaction.category,
       original_currency: transaction.originalCurrency ?? 'MYR',
       original_amount: transaction.originalAmount ?? transaction.amount,

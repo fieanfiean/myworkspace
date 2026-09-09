@@ -19,6 +19,7 @@ export interface BudgetTransaction {
   amount: number;
   description: string;
   transactionDate: string;
+  transaction_time?: string;
   category: TransactionCategory;
   createdAt: string;
   originalCurrency?: CurrencyCode;
@@ -31,6 +32,7 @@ export interface NewBudgetTransaction {
   amount: number;
   description: string;
   transactionDate: string;
+  transaction_time?: string;
   category: TransactionCategory;
   originalCurrency?: CurrencyCode;
   originalAmount?: number;
