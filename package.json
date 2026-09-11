@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:staging": "vite build --mode staging",
+    "build:prod": "vite build --mode production",
+    "deploy:staging": "npm run build:staging && npx netlify deploy --alias staging --dir dist --no-build",
+    "deploy:prod": "npm run build:prod && npx netlify deploy --prod --dir dist --no-build",
     "lint": "eslint .",
     "sync:anime": "npx tsx scripts/sync-maccms-anime.ts",
     "preview": "vite preview"
