@@ -1,7 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { existsSync } from 'node:fs';
 import process from 'node:process';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
+const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 interface Episode { ep: string; url: string }
 interface MacCmsVod {
@@ -18,6 +20,7 @@ interface AnimeRow {
   status: 'completed' | 'ongoing'; region_category: string | null; area: string | null;
   source_site: string; updated_at: string; release_date: string;
 }
+type AnimeDbRow = Omit<AnimeRow, 'episodes'>;
 interface SyncOptions { source: string; startPage: number; pages: number; batchSize: number; all: boolean; delayMs: number; typeIds: Array<string | undefined> }
 
 const DEFAULT_SOURCE = 'https://ffzy5.tv/api.php/provide/vod/?ac=detail';
@@ -175,8 +178,20 @@ function apiCount(value: number | string | undefined, fallback: number): number 
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
+async function safeUpsert(supabase: SupabaseClient, dbBatch: AnimeDbRow[], retries = 3): Promise<boolean> {
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      const { error } = await supabase.from('animes').upsert(dbBatch, { onConflict: 'external_id' });
+      if (!error) return true;
+      console.warn(`[Supabase Warning] 写入失败 (第 ${attempt}/${retries} 次): ${error.message}`);
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? ` ${error.message}` : '';
+      console.warn(`[Supabase Warning] 发生网络/520网关异常，第 ${attempt}/${retries} 次重试...${detail}`);
+    }
+    if (attempt < retries) await delay(1000 * Math.pow(2, attempt - 1));
+  }
+  console.error('[Supabase Error] 批次写入彻底失败，跳过该批次。');
+  return false;
 }
 
 async function main(): Promise<void> {
@@ -229,7 +244,6 @@ async function main(): Promise<void> {
   let processedPages = 0;
   for (const discovery of discoveries) {
     for (let page = firstPage; page <= discovery.lastPage; page += 1) {
-      if (processedPages > 0) await delay(options.delayMs);
       processedPages += 1;
       console.log(`[Page ${processedPages}/${totalPages}] Processing category ${discovery.typeId ?? 'all'}, source page ${page}...`);
       const payload = page === firstPage ? discovery.firstPayload : await fetchPage(options.source, page, discovery.typeId);
@@ -267,11 +281,12 @@ async function main(): Promise<void> {
         });
 
         // 写入 Supabase 数据库
-        const { error } = await supabase.from('animes').upsert(dbBatch, { onConflict: 'external_id' });
-        if (error) throw new Error(`Supabase upsert failed for category ${discovery.typeId ?? 'all'}, page ${page}: ${error.message}`);
-        imported += batch.length;
+        const written = await safeUpsert(supabase, dbBatch);
+        if (written) imported += dbBatch.length;
+        else skipped += dbBatch.length;
       }
       console.log(`[Page ${processedPages}/${totalPages}] Processed ${validRows.length} items (R2 JSON + Supabase Index). Cumulative total: ${imported} / ${remoteTotal}. Skipped: ${rows.length - validRows.length}.`);
+      await delay(300);
     }
   }
   console.log(`Anime sync complete: ${imported} upserted, ${skipped} skipped.`);
