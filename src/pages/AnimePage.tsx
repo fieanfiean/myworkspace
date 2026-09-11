@@ -1,19 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Clapperboard, Play, RefreshCw, Search, Star } from "lucide-react";
+import { ChevronDown, Clapperboard, RefreshCw, Search, SlidersHorizontal, Star } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AnimePlayerModal } from "@/components/AnimePlayerModal";
 import { supabase } from "@/lib/supabase";
 import type { Anime, AnimeEpisode } from "@/types/anime";
 
 const PAGE_SIZE = 24;
-const categories = [
-  { value: "All", labelKey: "all" },
-  { value: "日韩动漫", labelKey: "japaneseKorean" },
-  { value: "国产动漫", labelKey: "chinese" },
-  { value: "欧美动漫", labelKey: "western" },
-  { value: "港台动漫", labelKey: "hongKongTaiwan" },
-] as const;
-type AnimeCategory = (typeof categories)[number]["value"];
+const filterOptions = {
+  type: ["all", "anime", "movie", "series", "documentary"],
+  region: ["all", "japan", "china", "western", "korea", "hongKongTaiwan", "other"],
+  genre: ["all", "hotBlooded", "fantasy", "sciFi", "mystery", "romance", "comedy", "school", "healing", "action"],
+  status: ["all", "ongoing", "completed"],
+  year: ["all", "2026", "2025", "2024", "2023", "2020s", "2010s"],
+} as const;
+type FilterKey = keyof typeof filterOptions;
+type Filters = { [K in FilterKey]: (typeof filterOptions)[K][number] };
+const defaultFilters: Filters = { type: "all", region: "all", genre: "all", status: "all", year: "all" };
+const genreAliases: Record<Exclude<FilterKey, "year">, Record<string, string[]>> = {
+  type: { anime: ["动漫", "动漫片", "动画", "动画片", "Anime", "日本动漫", "日韩动漫", "国产动漫", "欧美动漫", "港台动漫"], movie: ["电影", "电影片", "Movies", "Movie"], series: ["电视剧", "连续剧", "剧集", "TV Series"], documentary: ["纪录片", "记录片", "Documentaries", "Documentary"] },
+  region: { japan: ["日本"], china: ["中国", "大陆", "中国大陆", "国产"], western: ["欧美", "美国", "英国", "法国", "德国", "加拿大", "西班牙", "意大利", "澳大利亚"], korea: ["韩国"], hongKongTaiwan: ["港台", "香港", "台湾", "中国香港", "中国台湾"], other: ["其他", "其它"] },
+  genre: { hotBlooded: ["热血"], fantasy: ["奇幻", "Fantasy"], sciFi: ["科幻"], mystery: ["悬疑", "推理"], romance: ["恋爱", "爱情"], comedy: ["搞笑", "喜剧"], school: ["校园"], healing: ["治愈"], action: ["动作", "Action"] },
+  status: { ongoing: ["连载", "连载中", "更新中", "Ongoing"], completed: ["完结", "已完结", "Completed"] },
+};
+
+function mediaType(item: Anime): Exclude<Filters["type"], "all"> {
+  const text = `${item.region_category ?? ""} ${item.genres.join(" ")}`.toLocaleLowerCase();
+  if (/纪录|documentary/.test(text)) return "documentary";
+  if (/电影|movie/.test(text) || item.episodes.length === 1 && /full movie/i.test(item.episodes[0]?.ep ?? "")) return "movie";
+  if (/电视剧|剧集|tv series|连续剧/.test(text)) return "series";
+  return "anime";
+}
 
 function isEpisode(value: unknown): value is AnimeEpisode {
   return (
@@ -43,6 +59,10 @@ function normalizeAnime(value: unknown): Anime | null {
       ? row.genres.filter((genre): genre is string => typeof genre === "string")
       : [],
     episodes: Array.isArray(row.episodes) ? row.episodes.filter(isEpisode) : [],
+    status: row.status === "completed" ? "completed" : "ongoing",
+    region_category: typeof row.region_category === "string" ? row.region_category : null,
+    area: typeof row.area === "string" ? row.area : null,
+    release_date: typeof row.release_date === "string" ? row.release_date : null,
     source_site: typeof row.source_site === "string" ? row.source_site : null,
     updated_at: typeof row.updated_at === "string" ? row.updated_at : "",
   };
@@ -56,8 +76,7 @@ function AnimeSkeleton() {
       role="status"
       aria-label={t("anime.loading")}
     >
-      <div className="h-[390px] rounded-2xl bg-gradient-to-r from-[#131825] via-[#1a2030] to-[#131825] sm:h-[430px]" />
-      <div className="mt-9 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
         {Array.from({ length: 8 }, (_, index) => (
           <div key={index}>
             <div className="aspect-[3/4] rounded-xl bg-[#181F30]" />
@@ -72,8 +91,8 @@ function AnimeSkeleton() {
 
 export function AnimePage() {
   const { t } = useTranslation();
-  const [selectedCategory, setSelectedCategory] =
-    useState<AnimeCategory>("All");
+  const [filters, setFilters] = useState<Filters>(defaultFilters);
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -94,13 +113,20 @@ export function AnimePage() {
     let request = supabase
       .from("animes")
       .select(
-        "id,external_id,title,cover_url,description,rating,year,genres,episodes,source_site,updated_at",
+        "id,external_id,title,cover_url,description,rating,year,genres,episodes,status,region_category,area,release_date,source_site,updated_at",
         { count: "exact" },
       )
       .order("updated_at", { ascending: false });
     if (searchQuery) request = request.ilike("title", `%${searchQuery}%`);
-    if (selectedCategory !== "All")
-      request = request.contains("genres", [selectedCategory]);
+    if (filters.type !== "all") request = request.in("region_category", genreAliases.type[filters.type]);
+    if (filters.region !== "all") request = request.in("area", genreAliases.region[filters.region]);
+    if (filters.genre !== "all") request = request.overlaps("genres", genreAliases.genre[filters.genre]);
+    if (filters.status !== "all") request = request.eq("status", filters.status);
+    if (filters.year !== "all") {
+      if (filters.year === "2020s") request = request.gte("year", 2020).lte("year", 2029);
+      else if (filters.year === "2010s") request = request.gte("year", 2010).lte("year", 2019);
+      else request = request.eq("year", Number(filters.year));
+    }
     const from = (page - 1) * PAGE_SIZE;
     const {
       data,
@@ -120,7 +146,7 @@ export function AnimePage() {
     }
     setLoading(false);
     setLoadingMore(false);
-  }, [page, searchQuery, selectedCategory]);
+  }, [filters, page, searchQuery]);
 
   useEffect(() => {
     queueMicrotask(() => void loadAnime());
@@ -138,10 +164,12 @@ export function AnimePage() {
     return () => window.clearTimeout(timer);
   }, [searchInput, searchQuery]);
 
-  const featured =
-    anime.find((item) => item.rating >= 9 && item.cover_url) ??
-    anime.find((item) => item.cover_url) ??
-    anime[0];
+  const changeFilter = <K extends FilterKey>(key: K, value: Filters[K]) => {
+    setAnime([]);
+    setPage(1);
+    setLoading(true);
+    setFilters(current => ({ ...current, [key]: value }));
+  };
 
   const commitSearch = () => {
     const nextQuery = searchInput.trim();
@@ -181,27 +209,10 @@ export function AnimePage() {
         </label>
       </header>
 
-      <div
-        className="mb-6 flex max-w-full gap-2 overflow-x-auto border-b border-slate-800 pb-3"
-        aria-label={t("anime.categoryLabel")}
-      >
-        {categories.map((category) => (
-          <button
-            key={category.value}
-            type="button"
-            onClick={() => {
-              if (category.value === selectedCategory) return;
-              setAnime([]);
-              setPage(1);
-              setLoading(true);
-              setSelectedCategory(category.value);
-            }}
-            className={`min-h-10 shrink-0 rounded-lg px-4 text-sm font-semibold transition ${selectedCategory === category.value ? "bg-indigo-600 text-white shadow-lg shadow-indigo-950/40" : "bg-[#131825] text-slate-400 hover:bg-slate-800 hover:text-white"}`}
-          >
-            {t(`anime.categories.${category.labelKey}`)}
-          </button>
-        ))}
-      </div>
+      <section className="mb-7 overflow-hidden rounded-2xl border border-slate-800 bg-[#111622]" aria-label={t("anime.filters.title")}>
+        <button type="button" onClick={() => setFiltersOpen(value => !value)} aria-expanded={filtersOpen} className="flex min-h-12 w-full items-center justify-between gap-3 px-4 text-left text-sm font-semibold text-slate-200 sm:px-5"><span className="flex items-center gap-2"><SlidersHorizontal size={17} className="text-violet-400"/>{t("anime.filters.title")}</span><ChevronDown size={17} className={`transition ${filtersOpen ? "rotate-180" : ""}`}/></button>
+        {filtersOpen && <div className="space-y-4 border-t border-slate-800 p-4 sm:p-5">{(Object.keys(filterOptions) as FilterKey[]).map(key => <div key={key} className="grid gap-2 sm:grid-cols-[6rem_minmax(0,1fr)] sm:items-start"><h2 className="pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">{t(`anime.filters.dimensions.${key}`)}</h2><div className="flex flex-wrap gap-2">{filterOptions[key].map(value => <button key={value} type="button" onClick={() => changeFilter(key, value)} className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition sm:text-sm ${filters[key] === value ? "bg-violet-600 text-white shadow-md shadow-violet-950/40" : "bg-[#181F30] text-slate-400 hover:bg-slate-700 hover:text-white"}`}>{t(`anime.filters.options.${key}.${value}`)}</button>)}</div></div>)}</div>}
+      </section>
 
       {loading ? (
         <AnimeSkeleton />
@@ -223,57 +234,13 @@ export function AnimePage() {
         <div className="flex min-h-96 items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-[#131825] px-6 text-sm text-slate-500">
           {searchQuery
             ? t("anime.emptySearch", { query: searchQuery })
-            : selectedCategory !== "All"
-              ? t("anime.emptyCategory", { category: selectedCategory })
+            : Object.values(filters).some(value => value !== "all")
+              ? t("anime.filters.empty")
               : t("anime.empty")}
         </div>
       ) : (
         <>
-          {featured && (
-            <section className="relative isolate min-h-[390px] overflow-hidden rounded-2xl border border-white/5 bg-[#131825] sm:min-h-[430px]">
-              <img
-                src={featured.cover_url || "/anime/void-empress-hero.png"}
-                alt={t("anime.bannerAlt", { title: featured.title })}
-                className="absolute inset-0 size-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#0B0E17] via-[#0B0E17]/85 to-[#0B0E17]/5" />
-              <div className="relative z-10 flex min-h-[390px] max-w-2xl flex-col items-start justify-center px-6 py-10 sm:min-h-[430px] sm:px-10 lg:px-14">
-                <span className="mb-5 rounded-md bg-violet-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-violet-300">
-                  {t("anime.featured")}
-                </span>
-                <h2 className="text-4xl font-black text-white sm:text-5xl">
-                  {featured.title}
-                </h2>
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-300">
-                  <span className="flex items-center gap-1 font-bold text-amber-400">
-                    <Star size={15} fill="currentColor" />
-                    {featured.rating.toFixed(1)}
-                  </span>
-                  <span>·</span>
-                  <span>{featured.year}</span>
-                  <span>·</span>
-                  <span>
-                    {t("anime.player.episodeCount", {
-                      count: featured.episodes.length,
-                    })}
-                  </span>
-                </div>
-                <p className="mt-5 line-clamp-3 max-w-md text-sm leading-6 text-slate-400 sm:text-base">
-                  {featured.description || t("anime.fallbackDescription")}
-                </p>
-                <button
-                  type="button"
-                  disabled={!featured.episodes.length}
-                  onClick={() => setPlaying(featured)}
-                  className="mt-7 flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
-                >
-                  <Play size={17} fill="currentColor" />
-                  {t("anime.watchNow")}
-                </button>
-              </div>
-            </section>
-          )}
-          <section className="mt-9">
+          <section>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                 {t("anime.allTitles")}
@@ -284,13 +251,25 @@ export function AnimePage() {
             </div>
             {anime.length ? (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
-                {anime.map((item) => (
+                {anime.map((item) => {
+                  const kind = mediaType(item);
+                  const badge = kind === "movie" || kind === "documentary"
+                    ? `${t("anime.cards.hd")} · ${item.year}`
+                    : item.status === "completed"
+                      ? t("anime.cards.completed")
+                      : item.status === "ongoing"
+                        ? item.episodes.length > 0
+                          ? t("anime.cards.updatedTo", { count: item.episodes.length })
+                          : t("anime.filters.options.status.ongoing")
+                        : item.episodes.length > 0
+                          ? t("anime.cards.updatedTo", { count: item.episodes.length })
+                          : t("anime.play");
+                  return (
                   <button
                     key={item.id}
                     type="button"
-                    disabled={!item.episodes.length}
                     onClick={() => setPlaying(item)}
-                    className="group min-w-0 text-left disabled:opacity-60"
+                    className="group min-w-0 text-left"
                   >
                     <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-[#181F30] ring-1 ring-white/5">
                       {item.cover_url ? (
@@ -309,21 +288,19 @@ export function AnimePage() {
                         <Star size={11} fill="currentColor" />
                         {item.rating.toFixed(1)}
                       </span>
-                      <span className="absolute bottom-2 left-2 rounded-md bg-violet-500/80 px-2 py-1 text-[10px] font-bold uppercase text-white opacity-0 group-hover:opacity-100">
-                        {t("anime.play")}
+                      <span className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] truncate rounded-md bg-violet-600/90 px-2 py-1 text-[10px] font-bold text-white shadow-lg">
+                        {badge}
                       </span>
                     </div>
                     <h3 className="mt-3 truncate text-sm font-semibold text-slate-100 group-hover:text-violet-300">
                       {item.title}
                     </h3>
                     <p className="mt-1 text-xs text-slate-500">
-                      {item.year} ·{" "}
-                      {t("anime.player.episodeCount", {
-                        count: item.episodes.length,
-                      })}
+                      {item.year} · {t(`anime.filters.options.type.${kind}`)}
                     </p>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-800 bg-[#131825] px-6 py-16 text-center text-sm text-slate-500">

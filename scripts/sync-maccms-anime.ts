@@ -1,22 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
 import { existsSync } from 'node:fs';
 import process from 'node:process';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 interface Episode { ep: string; url: string }
 interface MacCmsVod {
   vod_id?: string | number; vod_name?: string; vod_pic?: string; vod_blurb?: string;
   vod_content?: string; vod_score?: string | number; vod_year?: string | number;
   vod_class?: string; type_name?: string; vod_play_url?: string;
+  vod_remarks?: string; vod_time?: string; vod_time_add?: string | number;
+  vod_isend?: string | number; vod_area?: string;
 }
 interface MacCmsResponse { pagecount?: number | string; total?: number | string; list?: MacCmsVod[] }
 interface AnimeRow {
   external_id: string; title: string; cover_url: string | null; description: string | null;
   rating: number; year: number; genres: string[]; episodes: Episode[];
-  source_site: string; updated_at: string;
+  status: 'completed' | 'ongoing'; region_category: string | null; area: string | null;
+  source_site: string; updated_at: string; release_date: string;
 }
 interface SyncOptions { source: string; startPage: number; pages: number; batchSize: number; all: boolean; delayMs: number; typeIds: Array<string | undefined> }
 
-const DEFAULT_SOURCE = 'https://lhdhl.com/api.php/provide/vod/?ac=detail';
+const DEFAULT_SOURCE = 'https://ffzy5.tv/api.php/provide/vod/?ac=detail';
 const ANIME_TYPE_IDS = ['4', '29', '30', '31', '32', '33'];
 
 function optionValue(args: string[], name: string): string | undefined {
@@ -91,7 +95,17 @@ function stripHtml(value: string | undefined): string | null {
   return text || null;
 }
 
-function normalizeVod(vod: MacCmsVod, sourceSite: string, updatedAt: string): AnimeRow | null {
+function sourceUpdatedAt(vod: MacCmsVod, fallback: string): string {
+  const unixSeconds = Number(vod.vod_time_add);
+  if (Number.isFinite(unixSeconds) && unixSeconds > 0) return new Date(unixSeconds * 1000).toISOString();
+  if (vod.vod_time) {
+    const parsed = new Date(vod.vod_time.replace(' ', 'T'));
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return fallback;
+}
+
+function normalizeVod(vod: MacCmsVod, sourceSite: string, fallbackUpdatedAt: string): AnimeRow | null {
   const externalId = String(vod.vod_id ?? '').trim();
   const title = vod.vod_name?.trim() ?? '';
   const episodes = parseVodPlayUrl(vod.vod_play_url ?? '');
@@ -99,8 +113,8 @@ function normalizeVod(vod: MacCmsVod, sourceSite: string, updatedAt: string): An
   const rawRating = Number(vod.vod_score);
   const rawYear = Number.parseInt(String(vod.vod_year ?? ''), 10);
   const genres = (vod.vod_class ?? '').split(/[,/，]/).map(item => item.trim()).filter(Boolean);
-  const typeName = vod.type_name?.trim();
-  if (typeName && !genres.includes(typeName)) genres.push(typeName);
+  const updatedAt = sourceUpdatedAt(vod, fallbackUpdatedAt);
+  const status = Number(vod.vod_isend) === 1 || (vod.vod_remarks ?? '').includes('完结') ? 'completed' : 'ongoing';
   return {
     external_id: externalId,
     title,
@@ -110,8 +124,12 @@ function normalizeVod(vod: MacCmsVod, sourceSite: string, updatedAt: string): An
     year: Number.isSafeInteger(rawYear) && rawYear >= 1900 && rawYear <= 2100 ? rawYear : 2026,
     genres: genres.length > 0 ? genres : ['Action', 'Fantasy'],
     episodes,
+    status,
+    region_category: vod.type_name?.trim() || null,
+    area: vod.vod_area?.trim() || null,
     source_site: sourceSite,
     updated_at: updatedAt,
+    release_date: updatedAt,
   };
 }
 
@@ -123,19 +141,33 @@ function pageUrl(source: string, page: number, typeId?: string): string {
 }
 
 async function fetchPage(source: string, page: number, typeId?: string): Promise<MacCmsResponse> {
-  const response = await fetch(pageUrl(source, page, typeId), {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: 'application/json, text/plain, */*',
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`MacCMS request failed for page ${page}: HTTP ${response.status} ${response.statusText}`);
-  const payload = await response.json() as unknown;
-  if (typeof payload !== 'object' || payload === null || !Array.isArray((payload as MacCmsResponse).list)) {
-    throw new Error(`MacCMS returned an invalid response for page ${page}.`);
+  const targetUrl = pageUrl(source, page, typeId);
+
+  try {
+    const response = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`MacCMS request failed for page ${page}: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const payload = await response.json() as unknown;
+    if (typeof payload !== 'object' || payload === null || !Array.isArray((payload as MacCmsResponse).list)) {
+      throw new Error(`MacCMS returned an invalid response for page ${page}.`);
+    }
+    return payload as MacCmsResponse;
+  } catch (err: unknown) {
+    console.error(`[Fetch Failed] 无法请求 URL: ${targetUrl}`);
+    if (err && typeof err === 'object' && 'cause' in err) {
+      console.error('底层网络报错 (err.cause):', (err as { cause: unknown }).cause);
+    }
+    throw err;
   }
-  return payload as MacCmsResponse;
 }
 
 function apiCount(value: number | string | undefined, fallback: number): number {
@@ -150,10 +182,27 @@ function delay(milliseconds: number): Promise<void> {
 async function main(): Promise<void> {
   if (existsSync('.env.local')) process.loadEnvFile('.env.local');
   const options = parseOptions(process.argv.slice(2));
+  const syncStartedAt = new Date().toISOString();
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl) throw new Error('SUPABASE_URL is required in .env.local or the process environment.');
   if (!serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required in .env.local or the process environment.');
+
+  // ================= 1. 读取 R2 环境变量并初始化 S3 客户端 =================
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  const bucketName = process.env.R2_BUCKET_NAME;
+
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+    throw new Error('R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET_NAME are required in .env.local.');
+  }
+
+  const r2 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const sourceSite = new URL(options.source).origin;
@@ -161,6 +210,7 @@ async function main(): Promise<void> {
   let skipped = 0;
   const firstPage = options.all ? 1 : options.startPage;
   const discoveries: Array<{ typeId?: string; firstPayload: MacCmsResponse; lastPage: number; remoteTotal: number }> = [];
+
   for (const typeId of options.typeIds) {
     if (discoveries.length > 0) await delay(options.delayMs);
     const firstPayload = await fetchPage(options.source, firstPage, typeId);
@@ -175,6 +225,7 @@ async function main(): Promise<void> {
   const totalPages = discoveries.reduce((sum, item) => sum + item.lastPage - firstPage + 1, 0);
   const remoteTotal = discoveries.reduce((sum, item) => sum + item.remoteTotal, 0);
   console.log(`MacCMS reports ${remoteTotal} items across ${totalPages} pages for categories ${options.typeIds.filter(Boolean).join(', ') || 'all'}.`);
+
   let processedPages = 0;
   for (const discovery of discoveries) {
     for (let page = firstPage; page <= discovery.lastPage; page += 1) {
@@ -182,16 +233,45 @@ async function main(): Promise<void> {
       processedPages += 1;
       console.log(`[Page ${processedPages}/${totalPages}] Processing category ${discovery.typeId ?? 'all'}, source page ${page}...`);
       const payload = page === firstPage ? discovery.firstPayload : await fetchPage(options.source, page, discovery.typeId);
-      const rows = (payload.list ?? []).map(vod => normalizeVod(vod, sourceSite, new Date().toISOString()));
+      const rows = (payload.list ?? []).map(vod => normalizeVod(vod, sourceSite, syncStartedAt));
       const validRows = rows.filter((row): row is AnimeRow => row !== null);
       skipped += rows.length - validRows.length;
+
       for (let index = 0; index < validRows.length; index += options.batchSize) {
         const batch = validRows.slice(index, index + options.batchSize);
-        const { error } = await supabase.from('animes').upsert(batch, { onConflict: 'external_id' });
+
+        // ================= 2. 并行上传完整详情 JSON 到 Cloudflare R2 =================
+        await Promise.all(
+          batch.map(async (row) => {
+            const detailPayload = {
+              external_id: row.external_id,
+              title: row.title,
+              description: row.description,
+              episodes: row.episodes, // 最占体积的播放链接列表存入 R2
+            };
+
+            await r2.send(new PutObjectCommand({
+              Bucket: bucketName,
+              Key: `anime-details/${row.external_id}.json`,
+              Body: JSON.stringify(detailPayload),
+              ContentType: 'application/json',
+            }));
+          })
+        );
+
+        // ================= 3. 剔除 episodes 巨型字段，瘦身数据库行 =================
+        const dbBatch = batch.map((item) => {
+          const { episodes, ...rest } = item;
+          void episodes;
+          return rest;
+        });
+
+        // 写入 Supabase 数据库
+        const { error } = await supabase.from('animes').upsert(dbBatch, { onConflict: 'external_id' });
         if (error) throw new Error(`Supabase upsert failed for category ${discovery.typeId ?? 'all'}, page ${page}: ${error.message}`);
         imported += batch.length;
       }
-      console.log(`[Page ${processedPages}/${totalPages}] Upserted ${validRows.length} items. Cumulative total: ${imported} / ${remoteTotal}. Skipped: ${rows.length - validRows.length}.`);
+      console.log(`[Page ${processedPages}/${totalPages}] Processed ${validRows.length} items (R2 JSON + Supabase Index). Cumulative total: ${imported} / ${remoteTotal}. Skipped: ${rows.length - validRows.length}.`);
     }
   }
   console.log(`Anime sync complete: ${imported} upserted, ${skipped} skipped.`);

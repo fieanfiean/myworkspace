@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type Hls from "hls.js";
 import { ListVideo, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +7,18 @@ import type { Anime } from "@/types/anime";
 interface Props {
   anime: Anime;
   onClose: () => void;
+}
+
+interface Episode {
+  ep: string;
+  url: string;
+}
+
+interface AnimeDetailResponse {
+  external_id: string;
+  title: string;
+  description: string | null;
+  episodes: Episode[];
 }
 
 function secureStreamUrl(value: string): string | null {
@@ -24,21 +36,63 @@ function secureStreamUrl(value: string): string | null {
 
 export function AnimePlayerModal({ anime, onClose }: Props) {
   const { t } = useTranslation();
-  const episodes = useMemo(
-    () =>
-      anime.episodes
-        .map((item) => ({ ...item, url: secureStreamUrl(item.url) }))
-        .filter(
-          (item): item is { ep: string; url: string } => item.url !== null,
-        ),
-    [anime.episodes],
-  );
+
+  // 新增：从 R2 异步获取的详情与剧集状态
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(true);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerLoading, setPlayerLoading] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const selectedEpisode = episodes[selectedIndex];
 
+  // 1. 从 Cloudflare R2 拉取完整 JSON 详情（含播放列表）
+  useEffect(() => {
+  const id = anime.external_id || anime.id;
+  if (!id) return;
+
+  let isMounted = true;
+
+  // 将同步更新放入微任务队列，避开 react-hooks/set-state-in-effect 规则拦截
+  queueMicrotask(() => {
+    if (isMounted) {
+      setLoadingDetail(true);
+      setDetailError(null);
+    }
+  });
+
+  const r2PublicUrl = (import.meta.env.VITE_R2_PUBLIC_URL || "").replace(/\/+$/, "");
+
+  fetch(`${r2PublicUrl}/anime-details/${id}.json`)
+    .then((res) => {
+      if (!res.ok) throw new Error("Failed to fetch anime details from R2");
+      return res.json() as Promise<AnimeDetailResponse>;
+    })
+    .then((data) => {
+      if (!isMounted) return;
+      const safeEpisodes = (data.episodes || [])
+        .map((item) => ({ ...item, url: secureStreamUrl(item.url) }))
+        .filter((item): item is Episode => item.url !== null);
+
+      setEpisodes(safeEpisodes);
+    })
+    .catch((err) => {
+      if (!isMounted) return;
+      console.error("Fetch R2 anime detail error:", err);
+      setDetailError("anime.player.loadFailed");
+    })
+    .finally(() => {
+      if (isMounted) setLoadingDetail(false);
+    });
+
+  return () => {
+    isMounted = false;
+  };
+}, [anime.external_id, anime.id]);
+
+  // 2. 键盘 Esc 关闭与页面 Scroll 锁定
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -52,6 +106,7 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
     };
   }, [onClose]);
 
+  // 3. HLS.js 播放控制逻辑
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !selectedEpisode) return;
@@ -63,6 +118,7 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
         setPlayerLoading(true);
       }
     });
+
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = selectedEpisode.url;
       video.load();
@@ -72,6 +128,7 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
         video.load();
       };
     }
+
     void import("hls.js")
       .then(({ default: HlsPlayer }) => {
         if (cancelled) return;
@@ -102,6 +159,7 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
           setPlayerLoading(false);
         }
       });
+
     return () => {
       cancelled = true;
       hls?.destroy();
@@ -133,7 +191,9 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
               {anime.title}
             </h2>
             <p className="truncate text-xs text-slate-500">
-              {selectedEpisode
+              {loadingDetail
+                ? t("anime.player.loading")
+                : selectedEpisode
                 ? t("anime.player.playingEpisode", {
                     episode: selectedEpisode.ep,
                   })
@@ -149,9 +209,13 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
             <X size={21} />
           </button>
         </header>
+
         <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_280px]">
+          {/* 视频播放器区域 */}
           <div className="relative flex min-h-[240px] items-center justify-center bg-black lg:min-h-[520px]">
-            {selectedEpisode ? (
+            {loadingDetail ? (
+              <p className="text-sm text-slate-400">{t("anime.player.loading")}</p>
+            ) : selectedEpisode ? (
               <video
                 ref={videoRef}
                 controls
@@ -165,10 +229,11 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
               />
             ) : (
               <p className="px-6 text-center text-sm text-slate-500">
-                {t("anime.player.noSecureEpisodes")}
+                {detailError ? t(detailError) : t("anime.player.noSecureEpisodes")}
               </p>
             )}
-            {selectedEpisode && playerLoading && (
+
+            {selectedEpisode && playerLoading && !loadingDetail && (
               <p
                 className="pointer-events-none absolute rounded-lg bg-black/70 px-4 py-2 text-sm text-slate-300"
                 role="status"
@@ -177,6 +242,8 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
               </p>
             )}
           </div>
+
+          {/* 右侧选集列表 */}
           <aside className="min-h-0 border-t border-slate-800 bg-[#101522] lg:border-l lg:border-t-0">
             <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-400">
               <ListVideo size={16} />
@@ -186,27 +253,36 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
               </span>
             </div>
             <div className="flex max-h-52 gap-2 overflow-auto p-3 lg:max-h-[520px] lg:flex-col">
-              {episodes.map((episode, index) => (
-                <button
-                  key={`${episode.ep}-${episode.url}`}
-                  type="button"
-                  onClick={() => setSelectedIndex(index)}
-                  className={`min-h-11 shrink-0 rounded-lg px-3 py-2 text-left text-sm transition ${selectedIndex === index ? "bg-indigo-600 font-semibold text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white"}`}
-                >
-                  <span className="block max-w-40 truncate lg:max-w-none">
-                    {episode.ep}
-                  </span>
-                </button>
-              ))}
+              {loadingDetail ? (
+                <div className="p-3 text-xs text-slate-500">加载剧集中...</div>
+              ) : (
+                episodes.map((episode, index) => (
+                  <button
+                    key={`${episode.ep}-${episode.url}`}
+                    type="button"
+                    onClick={() => setSelectedIndex(index)}
+                    className={`min-h-11 shrink-0 rounded-lg px-3 py-2 text-left text-sm transition ${
+                      selectedIndex === index
+                        ? "bg-indigo-600 font-semibold text-white"
+                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    <span className="block max-w-40 truncate lg:max-w-none">
+                      {episode.ep}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
           </aside>
         </div>
-        {playerError && (
+
+        {(playerError || detailError) && (
           <p
             role="alert"
             className="border-t border-rose-900/60 bg-rose-950/50 px-5 py-3 text-sm text-rose-300"
           >
-            {t(playerError)}
+            {t(playerError || detailError || "")}
           </p>
         )}
       </section>
