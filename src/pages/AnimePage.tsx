@@ -60,6 +60,7 @@ function normalizeAnime(value: unknown): Anime | null {
       : [],
     episodes: Array.isArray(row.episodes) ? row.episodes.filter(isEpisode) : [],
     status: row.status === "completed" ? "completed" : "ongoing",
+    category: typeof row.region_category === "string" ? row.region_category : null,
     region_category: typeof row.region_category === "string" ? row.region_category : null,
     area: typeof row.area === "string" ? row.area : null,
     release_date: typeof row.release_date === "string" ? row.release_date : null,
@@ -296,7 +297,7 @@ export function AnimePage() {
                       {item.title}
                     </h3>
                     <p className="mt-1 text-xs text-slate-500">
-                      {item.year} · {t(`anime.filters.options.type.${kind}`)}
+                      {item.year} · {item.category || t(`anime.filters.options.type.${kind}`)}
                     </p>
                   </button>
                   );

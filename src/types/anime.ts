@@ -11,6 +11,7 @@ export interface Anime {
   genres: string[];
   episodes: AnimeEpisode[];
   status: 'ongoing' | 'completed';
+  category: string | null;
   region_category: string | null;
   area: string | null;
   release_date: string | null;
