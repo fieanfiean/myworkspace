@@ -29,10 +29,14 @@ interface ReceiptResult {
   amount: number;
   currency: 'MYR';
   date: string;
-  time: string;
+  transaction_time: string;
   description: string;
   type: TransactionType;
   suggested_category: ReceiptCategory;
+}
+
+interface ReceiptBatchResult {
+  transactions: ReceiptResult[];
 }
 
 interface JsonImagePayload {
@@ -99,13 +103,25 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+function normalizeMimeType(value: string | undefined): string {
+  let mimeType = (value || 'image/jpeg').split(';')[0].trim().toLowerCase();
+  if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+  if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic'].includes(mimeType)) mimeType = 'image/jpeg';
+  return mimeType;
+}
+
+function cleanBase64Data(value: string): string {
+  return value
+    .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/i, '')
+    .replace(/[\r\n\s]/g, '');
+}
+
 function normalizeBase64(value: string, fallbackMimeType: string): { data: string; mimeType: string } {
   const trimmed = value.trim();
   const dataUrl = /^data:([^;,]+);base64,(.+)$/s.exec(trimmed);
-  const data = (dataUrl?.[2] ?? trimmed).replace(/\s/g, '');
-  const mimeType = dataUrl?.[1] ?? fallbackMimeType;
+  const data = cleanBase64Data(dataUrl?.[2] ?? trimmed);
+  const mimeType = normalizeMimeType(dataUrl?.[1] ?? fallbackMimeType);
 
-  if (!mimeType.startsWith('image/')) throw new RequestError('The uploaded payload must be an image.');
   if (!data || !/^[A-Za-z0-9+/]*={0,2}$/.test(data) || data.length % 4 !== 0) {
     throw new RequestError('The image base64 payload is invalid.');
   }
@@ -122,14 +138,11 @@ async function imageFromRequest(request: Request): Promise<{ data: string; mimeT
 
   if (contentType.includes('multipart/form-data')) {
     const formData = await request.formData();
-    const preferred = formData.get('image') ?? formData.get('file');
-    const file = preferred instanceof File
-      ? preferred
-      : [...formData.values()].find((value): value is File => value instanceof File);
-    if (!file) throw new RequestError('FormData must contain an image file in the image or file field.');
-    if (!file.type.startsWith('image/')) throw new RequestError('The uploaded file must be an image.');
+    const file = formData.get('file') || formData.get('image');
+    if (!(file instanceof File)) throw new RequestError('No valid image file uploaded in request body.');
+    if (file.type && !file.type.toLowerCase().startsWith('image/')) throw new RequestError('The uploaded file must be an image.');
     if (file.size === 0) throw new RequestError('The uploaded image is empty.');
-    return { data: bytesToBase64(new Uint8Array(await file.arrayBuffer())), mimeType: file.type };
+    return { data: bytesToBase64(new Uint8Array(await file.arrayBuffer())), mimeType: normalizeMimeType(file.type) };
   }
 
   if (contentType.includes('application/json')) {
@@ -151,7 +164,7 @@ async function imageFromRequest(request: Request): Promise<{ data: string; mimeT
   if (contentType.startsWith('image/')) {
     const bytes = new Uint8Array(await request.arrayBuffer());
     if (bytes.length === 0) throw new RequestError('The uploaded image is empty.');
-    return { data: bytesToBase64(bytes), mimeType: contentType.split(';')[0] };
+    return { data: bytesToBase64(bytes), mimeType: normalizeMimeType(contentType) };
   }
 
   const rawBase64 = await request.text();
@@ -174,7 +187,7 @@ function parseReceipt(value: unknown): ReceiptResult {
   const record = value as Record<string, unknown>;
   const amount = typeof record.amount === 'number' ? record.amount : Number(record.amount);
   const date = typeof record.date === 'string' ? record.date : '';
-  const time = typeof record.time === 'string' ? record.time : '';
+  const transactionTime = typeof record.transaction_time === 'string' ? record.transaction_time : '';
   const description = typeof record.description === 'string' ? record.description.trim() : '';
   const type = record.type;
   const category = record.suggested_category;
@@ -182,7 +195,7 @@ function parseReceipt(value: unknown): ReceiptResult {
   if (!Number.isFinite(amount) || amount < 0) throw new RequestError('Gemini returned an invalid amount.', 502);
   if (record.currency !== 'MYR') throw new RequestError('Gemini returned an unsupported currency.', 502);
   if (!isDate(date)) throw new RequestError('Gemini returned an invalid date.', 502);
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new RequestError('Gemini returned an invalid time.', 502);
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(transactionTime)) throw new RequestError('Gemini returned an invalid time.', 502);
   if (!description) throw new RequestError('Gemini did not identify a merchant or payee.', 502);
   if (type !== 'expense' && type !== 'income') throw new RequestError('Gemini returned an invalid transaction type.', 502);
   if (typeof category !== 'string' || !allowedCategories.includes(category as ReceiptCategory)) {
@@ -193,40 +206,43 @@ function parseReceipt(value: unknown): ReceiptResult {
     amount,
     currency: 'MYR',
     date,
-    time,
+    transaction_time: transactionTime,
     description,
     type,
     suggested_category: category as ReceiptCategory,
   };
 }
 
-async function callGemini(apiKey: string, image: { data: string; mimeType: string }): Promise<ReceiptResult> {
-  const requestBody = JSON.stringify({
+function parseReceiptBatch(value: unknown): ReceiptBatchResult {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new RequestError('Gemini returned an invalid transaction batch.', 502);
+  }
+  const transactions = (value as Record<string, unknown>).transactions;
+  if (!Array.isArray(transactions) || transactions.length === 0) {
+    throw new RequestError('Gemini did not identify any transactions.', 502);
+  }
+  if (transactions.length > 100) {
+    throw new RequestError('Gemini returned too many transactions.', 502);
+  }
+  return { transactions: transactions.map(parseReceipt) };
+}
+
+async function callGemini(apiKey: string, image: { data: string; mimeType: string }): Promise<ReceiptBatchResult> {
+  const mimeType = normalizeMimeType(image.mimeType);
+  const cleanBase64 = cleanBase64Data(image.data);
+  const geminiPayload = {
       contents: [{
-        role: 'user',
         parts: [
-          { text: 'Read this Malaysian receipt or transaction image and return only the requested JSON. Treat RM as MYR, extract the final paid total, and use the merchant or payee as description. Use 00:00 only when no time is visible. Classify conservatively and never invent text.' },
-          { inline_data: { mime_type: image.mimeType, data: image.data } },
+          { text: 'Analyze this Malaysian receipt, bank/eWallet slip, or transaction-history screenshot and extract transaction data as JSON. Return exactly one object shaped as {"transactions":[{"amount":9,"currency":"MYR","date":"2026-09-08","transaction_time":"12:20","description":"Merchant or payee","type":"expense","suggested_category":"Food"}]}. If it contains a single receipt, return 1 transaction inside the array. If it contains a history list, extract ALL distinct visible transactions in display order. Treat RM as MYR. For a receipt use only the final paid total. Allowed categories are Groceries, Food, Transport, Utilities, Entertainment, Healthcare, and Other. Use 00:00 only if no time is visible. Ignore balances, subtotals, dates, and UI numbers. Never invent text.' },
+          { inlineData: { mimeType, data: cleanBase64 } },
         ],
       }],
       generationConfig: {
         temperature: 0,
-        response_mime_type: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          required: ['amount', 'currency', 'date', 'time', 'description', 'type', 'suggested_category'],
-          properties: {
-            amount: { type: 'NUMBER' },
-            currency: { type: 'STRING', enum: ['MYR'] },
-            date: { type: 'STRING', description: 'Transaction date in YYYY-MM-DD format.' },
-            time: { type: 'STRING', description: 'Transaction time in 24-hour HH:mm format.' },
-            description: { type: 'STRING', description: 'Merchant or payee name.' },
-            type: { type: 'STRING', enum: ['expense', 'income'] },
-            suggested_category: { type: 'STRING', enum: [...allowedCategories] },
-          },
-        },
+        responseMimeType: 'application/json',
       },
-    });
+    };
+  const requestBody = JSON.stringify(geminiPayload);
 
   for (const modelName of [MODEL_NAME, FALLBACK_MODEL_NAME]) {
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -234,13 +250,13 @@ async function callGemini(apiKey: string, image: { data: string; mimeType: strin
     const responseText = await geminiRes.text();
 
     if (!geminiRes.ok) {
-      console.error(`Gemini API Error [${geminiRes.status}]:`, responseText);
+      console.error(`Gemini Error [${geminiRes.status}]:`, responseText);
+      console.error(`Payload Info: mimeType=${mimeType}, base64Length=${cleanBase64.length}`);
       if (geminiRes.status === 404 && modelName === MODEL_NAME) continue;
 
       let userMessage = `Gemini API returned ${geminiRes.status}`;
       if (geminiRes.status === 429) userMessage = 'AI recognition rate limit reached. Please wait 5–10 seconds and try again.';
       else if (geminiRes.status === 503) userMessage = 'AI recognition service is temporarily unavailable. Please wait a moment and try again.';
-      else if (geminiRes.status === 400) userMessage = 'Invalid image or payload format sent to AI service.';
       throw new GeminiApiError(userMessage, geminiRes.status, responseText);
     }
 
@@ -258,7 +274,7 @@ async function callGemini(apiKey: string, image: { data: string; mimeType: strin
 
     try {
       const parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) as unknown;
-      return parseReceipt(parsed);
+      return parseReceiptBatch(parsed);
     } catch (error) {
       if (error instanceof RequestError) throw error;
       throw new RequestError('Gemini returned malformed JSON.', 502);

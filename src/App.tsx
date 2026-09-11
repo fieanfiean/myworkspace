@@ -2,18 +2,20 @@ import { useEffect, useRef, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { AboutMePage } from './pages/AboutMePage';
 import { BudgetPage } from './pages/BudgetPage';
+import { AnimePage } from './pages/AnimePage';
 import { EnvironmentBadge } from './components/EnvironmentBadge';
 import { Header } from './components/Header';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import { LoginPage } from './pages/LoginPage';
 import { ThemeProvider } from './context/ThemeContext';
+import type { Tab } from './components/Sidebar';
 
 const EDGE_SWIPE_MIN = 16;
 const EDGE_SWIPE_MAX = 80;
 
 function AuthenticatedApp() {
-  const [activeTab, setActiveTab] = useState<'profile' | 'budget'>('profile');
+  const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobileToolsOpen, setIsMobileToolsOpen] = useState(false);
@@ -92,7 +94,7 @@ function AuthenticatedApp() {
 
   if (!user) return <LoginPage />;
 
-  const changeTab = (tab: 'profile' | 'budget') => {
+  const changeTab = (tab: Tab) => {
     setActiveTab(tab);
     setIsMobileToolsOpen(false);
   };
@@ -104,7 +106,9 @@ function AuthenticatedApp() {
 
       <main className={`w-full min-w-0 flex-1 px-4 py-4 transition-[margin] duration-300 ease-in-out sm:px-6 md:p-8 ${isSidebarCollapsed ? 'md:ml-16' : 'md:ml-64'}`}>
         <Header onOpenMenu={() => setIsMobileSidebarOpen(true)} onOpenTools={() => setIsMobileToolsOpen(true)} />
-        {activeTab === 'profile' ? <AboutMePage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} /> : <BudgetPage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
+        {activeTab === 'profile' && <AboutMePage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
+        {activeTab === 'budget' && <BudgetPage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
+        {activeTab === 'anime' && <AnimePage />}
       </main>
     </div>
   );

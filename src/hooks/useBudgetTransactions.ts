@@ -95,6 +95,26 @@ export function useBudgetTransactions(userId: string | undefined) {
     await refresh();
   }, [refresh, userId]);
 
+  const addTransactions = useCallback(async (items: NewBudgetTransaction[]) => {
+    if (!userId) throw new Error('Missing authenticated user.');
+    if (items.length === 0) return;
+    const rows = items.map(transaction => ({
+      profile_id: userId,
+      type: transaction.type,
+      amount: transaction.amount,
+      description: transaction.description.trim(),
+      date: transaction.transactionDate,
+      transaction_time: transaction.transaction_time || null,
+      category: transaction.category,
+      original_currency: transaction.originalCurrency ?? 'MYR',
+      original_amount: transaction.originalAmount ?? transaction.amount,
+      exchange_rate: transaction.exchangeRate ?? 1,
+    }));
+    const { error: insertError } = await supabase.from('transactions').insert(rows);
+    if (insertError) throw new Error(insertError.message);
+    await refresh();
+  }, [refresh, userId]);
+
   const updateTransaction = useCallback(async (id: string, transaction: NewBudgetTransaction) => {
     if (!userId) throw new Error('Missing authenticated user.');
     const { data: updated, error: updateError } = await supabase.from('transactions').update({
@@ -120,5 +140,5 @@ export function useBudgetTransactions(userId: string | undefined) {
     await refresh();
   }, [refresh, userId]);
 
-  return { transactions, loading, error, refresh, addTransaction, updateTransaction, deleteTransaction };
+  return { transactions, loading, error, refresh, addTransaction, addTransactions, updateTransaction, deleteTransaction };
 }

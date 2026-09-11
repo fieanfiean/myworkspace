@@ -35,16 +35,27 @@ type ChartGranularity = 'daily' | 'weekly' | 'monthly';
 
 interface ReceiptOCRResult extends ParsedOCRResult {
   currency: 'MYR';
-  time: string;
+  transaction_time: string;
   type: TransactionType;
   suggested_category: 'Groceries' | 'Food' | 'Transport' | 'Utilities' | 'Entertainment' | 'Healthcare' | 'Other';
+}
+
+interface ReceiptBatchResult {
+  transactions: ReceiptOCRResult[];
+}
+
+interface BatchImportItem {
+  id: string;
+  transaction: NewBudgetTransaction;
+  duplicate: DuplicateCheckResult | null;
+  selected: boolean;
 }
 
 interface ReceiptFunctionError {
   error: string;
 }
 
-type ReceiptFunctionResponse = ReceiptOCRResult | ReceiptFunctionError;
+type ReceiptFunctionResponse = ReceiptBatchResult | ReceiptFunctionError;
 
 async function receiptInvokeErrorMessage(error: unknown, fallback: string, rateLimit: string, serviceUnavailable: string): Promise<string> {
   if (typeof error !== 'object' || error === null) return fallback;
@@ -54,17 +65,25 @@ async function receiptInvokeErrorMessage(error: unknown, fallback: string, rateL
   if (context.status === 503) return serviceUnavailable;
   try {
     const body = await context.clone().json() as unknown;
-    if (typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string') return body.error;
+    if (typeof body === 'object' && body !== null) {
+      const errorBody = body as { error?: unknown; details?: unknown };
+      if (errorBody.details !== undefined) console.error('400 Detailed Response:', errorBody.details);
+      if (typeof errorBody.error === 'string') {
+        console.error('Parse Receipt Error:', errorBody.error);
+        return errorBody.error;
+      }
+    }
   } catch {
     // The fallback remains actionable when the response body is not JSON.
   }
+  console.error('Parse Receipt Error:', error instanceof Error ? error.message : fallback);
   return fallback;
 }
 
 export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; onCloseTools: () => void }) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
-  const { transactions, loading, error, addTransaction, updateTransaction, deleteTransaction } = useBudgetTransactions(user?.id);
+  const { transactions, loading, error, addTransaction, addTransactions, updateTransaction, deleteTransaction } = useBudgetTransactions(user?.id);
   const [form, setForm] = useState<NewBudgetTransaction>({ type: 'expense', amount: 0, description: '', transactionDate: today(), transaction_time: '', category: 'groceries', originalCurrency: baseCurrency, exchangeRate: 1 });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -72,6 +91,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const [rateError, setRateError] = useState<string | null>(null);
   const [scanningReceipt, setScanningReceipt] = useState(false);
   const [duplicateMatch, setDuplicateMatch] = useState<DuplicateCheckResult | null>(null);
+  const [batchItems, setBatchItems] = useState<BatchImportItem[]>([]);
   const [editing, setEditing] = useState<BudgetTransaction | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BudgetTransaction | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -100,15 +120,16 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
       setScanningReceipt(true);
       setFormError(null);
       setDuplicateMatch(null);
+      setBatchItems([]);
       if (!file.type.startsWith('image/')) throw new Error('Receipt upload must be an image.');
       const compressedFile = await imageCompression(file, {
         maxSizeMB: 1,
         maxWidthOrHeight: 1920,
         useWebWorker: true,
       });
-      const body = new FormData();
-      body.append('image', compressedFile, compressedFile.name);
-      const { data, error: invokeError } = await supabase.functions.invoke<ReceiptFunctionResponse>('parse-receipt', { body });
+      const formData = new FormData();
+      formData.append('file', compressedFile);
+      const { data, error: invokeError } = await supabase.functions.invoke<ReceiptFunctionResponse>('parse-receipt', { body: formData });
       if (invokeError) {
         setFormError(await receiptInvokeErrorMessage(invokeError, t('budget.form.scanError'), t('budget.form.scanRateLimit'), t('budget.form.scanServiceUnavailable')));
         return;
@@ -118,22 +139,25 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
         setFormError(data.error);
         return;
       }
-      const suggestedCategory = data.suggested_category.toLocaleLowerCase() as TransactionCategory;
-      const category = categories.includes(suggestedCategory) ? suggestedCategory : 'other';
-      const parsed: ParsedOCRResult = { amount: data.amount, date: data.date, time: data.time, description: data.description };
-      setForm({
-        type: data.type,
-        amount: data.amount,
-        description: data.description,
-        transactionDate: data.date,
-        transaction_time: data.time,
-        category,
-        originalCurrency: baseCurrency,
-        originalAmount: data.amount,
-        exchangeRate: 1,
+      if (!Array.isArray(data.transactions) || data.transactions.length === 0) throw new Error(t('budget.form.scanNoTransactions'));
+      const parsedItems = data.transactions.map((item, index): BatchImportItem => {
+        const suggestedCategory = item.suggested_category.toLocaleLowerCase() as TransactionCategory;
+        const category = categories.includes(suggestedCategory) ? suggestedCategory : 'other';
+        const parsed: ParsedOCRResult = { amount: item.amount, date: item.date, time: item.transaction_time, description: item.description };
+        const duplicate = checkDuplicateTransaction(parsed, transactions);
+        return {
+          id: `${item.date}-${item.transaction_time}-${index}`,
+          transaction: { type: item.type, amount: item.amount, description: item.description, transactionDate: item.date, transaction_time: item.transaction_time, category, originalCurrency: baseCurrency, originalAmount: item.amount, exchangeRate: 1 },
+          duplicate: duplicate.isDuplicate ? duplicate : null,
+          selected: !duplicate.isDuplicate,
+        };
       });
-      const duplicate = checkDuplicateTransaction(parsed, transactions);
-      setDuplicateMatch(duplicate.isDuplicate ? duplicate : null);
+      if (parsedItems.length === 1) {
+        setForm(parsedItems[0].transaction);
+        setDuplicateMatch(parsedItems[0].duplicate);
+      } else {
+        setBatchItems(parsedItems);
+      }
       setRateError(null);
     } catch (cause) {
       console.error('Receipt scan failed.', cause);
@@ -142,6 +166,24 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
       setScanningReceipt(false);
       input.value = '';
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const importBatch = async () => {
+    const selected = batchItems.filter(item => item.selected).map(item => item.transaction);
+    if (selected.length === 0) {
+      setFormError(t('budget.form.batchSelectOne'));
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      await addTransactions(selected);
+      setBatchItems([]);
+    } catch (cause) {
+      setFormError(cause instanceof Error ? cause.message : t('budget.form.batchSaveError'));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -297,6 +339,14 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" disabled={scanningReceipt || saving} onChange={event => void handleFileSelect(event)}/>
             <p className="text-center text-xs text-slate-500">{t('budget.form.scanHint')}</p>
           </div>
+          {batchItems.length > 0 && <section className="space-y-3 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-3" aria-label={t('budget.form.batchTitle')}>
+            <div><h3 className="text-sm font-bold text-indigo-200">{t('budget.form.batchTitle')}</h3><p className="mt-1 text-xs text-slate-400">{t('budget.form.batchFound', { count: batchItems.length })}</p></div>
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">{batchItems.map(item => <label key={item.id} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${item.selected ? 'border-indigo-500/60 bg-slate-950/70' : 'border-slate-700 bg-slate-900/60'}`}>
+              <input type="checkbox" checked={item.selected} disabled={saving} onChange={event => setBatchItems(current => current.map(candidate => candidate.id === item.id ? { ...candidate, selected: event.target.checked } : candidate))} className="mt-1 size-4 accent-indigo-500"/>
+              <span className="min-w-0 flex-1"><span className="flex justify-between gap-2 text-sm"><strong className="truncate text-white">{item.transaction.description}</strong><span className={item.transaction.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}>{currency.format(item.transaction.amount)}</span></span><span className="mt-1 block text-xs text-slate-400">{item.transaction.transactionDate} {item.transaction.transaction_time} · {t(`budget.categories.${item.transaction.category}`)}</span>{item.duplicate && <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-400"><AlertTriangle size={13}/>{t('budget.form.batchDuplicate')}</span>}</span>
+            </label>)}</div>
+            <div className="grid grid-cols-2 gap-2"><button type="button" disabled={saving} onClick={() => setBatchItems([])} className="min-h-11 rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-300 hover:bg-slate-800">{t('common.cancel')}</button><button type="button" disabled={saving || !batchItems.some(item => item.selected)} onClick={() => void importBatch()} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{saving && <LoaderCircle size={16} className="animate-spin"/>}{t('budget.form.batchImport', { count: batchItems.filter(item => item.selected).length })}</button></div>
+          </section>}
           {duplicateMatch?.matchedTransaction && <div role="alert" className="rounded-xl border border-amber-500/70 bg-amber-500/15 p-4 text-amber-100 shadow-lg shadow-amber-950/20"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={21}/><div><p className="font-bold">{t('budget.form.duplicateWarningTitle')}</p><p className="mt-1 text-sm text-amber-200">{t('budget.form.duplicateWarningDesc', { date: duplicateMatch.matchedTransaction.date ?? duplicateMatch.matchedTransaction.transactionDate ?? '', amount: currency.format(duplicateMatch.matchedTransaction.amount), merchant: duplicateMatch.matchedTransaction.description })}</p></div></div></div>}
           <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.type')}</legend><div className="grid grid-cols-2 rounded-xl bg-slate-950 p-1">{(['income', 'expense'] as TransactionType[]).map(type => <button key={type} type="button" onClick={() => setForm(current => ({ ...current, type }))} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${form.type === type ? type === 'income' ? 'bg-emerald-700 text-white shadow' : 'bg-rose-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>{t(`budget.${type}`)}</button>)}</div></fieldset>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

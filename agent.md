@@ -82,7 +82,7 @@
 - 基准币种为 MYR；支持 MYR、USD、SGD、JPY、EUR、GBP、CNY、THB、TWD。
 - `amount` 保存折算后的 MYR 金额；`original_currency`、`original_amount`、`exchange_rate` 保存原币信息。
 - 外币汇率来自无 Key 的 Open ExchangeRate-API，以 MYR 报价倒数换算成“1 单位外币对应 MYR”；内存缓存请求结果，失败时允许手动输入并显示来源及错误提示。
-- `supabase/functions/parse-receipt` 接收 FormData、JSON/data URL base64、纯 base64 或原始图片，通过 `GEMINI_API_KEY` 调用当前 GA 的 `gemini-3.7-flash` 多模态模型，并将收据严格校验为 MYR 交易 JSON；端点必须使用 `/models/${MODEL_NAME}:generateContent` 的冒号语法。Gemini API Key 必须先 `trim()`，仅通过 URL 的 `?key=` query parameter 发送，禁止作为 `Authorization: Bearer` header。函数必须保持全局 try/catch、所有响应的 CORS headers、缺少 Secret 时的明确 500 JSON，以及 Gemini JSON / markdown code fence 清理。Quick Add 顶部通过显式按钮触发标准 `accept="image/*"` 隐藏文件输入（不设置 `capture`，保留手机相机/图库/文件选择及桌面文件选择），图片先以 `browser-image-compression` 压缩至目标 1MB、最长边 1920px，再显示全表单加载遮罩并自动填充金额、日期、时间、商户、收支类型与类别。
+- `supabase/functions/parse-receipt` 接收 FormData、JSON/data URL base64、纯 base64 或原始图片，通过 `GEMINI_API_KEY` 调用当前 GA 的 `gemini-3.7-flash` 多模态模型。Gemini 必须始终返回 `{ transactions: [...] }`，Edge Function 对数组内每笔 MYR 交易逐项严格校验，并最多接受 100 笔；既支持单张收据，也支持银行 / eWallet 交易历史截图。端点必须使用 `/models/${MODEL_NAME}:generateContent` 的冒号语法。Gemini API Key 必须先 `trim()`，仅通过 URL 的 `?key=` query parameter 发送，禁止作为 `Authorization: Bearer` header。函数必须保持全局 try/catch、所有响应的 CORS headers、缺少 Secret 时的明确 500 JSON，以及 Gemini JSON / markdown code fence 清理。Quick Add 顶部通过显式按钮触发标准 `accept="image/*"` 隐藏文件输入（不设置 `capture`），图片先压缩至目标 1MB、最长边 1920px；单笔结果自动填入表单，多笔结果显示可勾选预览，可能重复项默认不选，确认后通过一次 Supabase insert 批量写入并只刷新一次。
 - `src/lib/deduplication.ts` 提供纯函数 OCR 交易去重：金额误差 `< 0.01`、同日期、双方有时间时相差不超过 5 分钟，并结合标准化子串与 Dice coefficient 商户名相似度；返回最强匹配及 0–1 分数。
 - OCR 填充后立即执行去重；命中时在表单顶部显示现有交易的日期、金额和商户警告，但不锁定字段或阻止用户确认保存。
 - 每次 OCR 选择都会重新压缩图片，并在 `finally` 同时清空事件 input 与 `fileInputRef`，保证连续选择同一文件也触发；前端读取 Edge Function 的结构化错误，429/503 显示本地化限流或服务繁忙提示。Edge Function 对 Gemini 429/503 最多额外重试 2 次，每次间隔 1 秒；其他状态立即处理，最终仍失败时透传 Gemini 400–599 状态和安全错误信息，主模型 404 时按兼容要求尝试 `gemini-2.0-flash` fallback。
@@ -98,6 +98,15 @@
 - `VitePWA` 使用 `registerType: 'autoUpdate'` 和 Workbox `generateSW`。
 - 缓存 JS、CSS、HTML、图标、图片和字体，导航 fallback 为 `index.html`，并清理旧缓存。
 - Manifest 名称为 `My Workspace & Budget Tracker`，`display: standalone`、竖屏方向，提供 192px 和 512px（含 maskable）图标。
+
+### E. Anime Stream
+
+- `src/pages/AnimePage.tsx` 提供独立的暗色 AniStream 浏览页，通过 Sidebar 的 `Anime Stream` 页签进入；所有标题搜索和地区分类均在 Supabase 服务端执行，按 `updated_at DESC` 每页读取 24 条并以 Load More 追加，使用 exact count 判断剩余页。页面包含 300ms 搜索防抖、过期请求防覆盖、Loading Skeleton、错误重试、搜索/分类空状态、动态 Featured Hero 与响应式 2–8 列封面网格。
+- `src/components/AnimePlayerModal.tsx` 使用 Safari 原生 HLS 或按需动态加载的 `hls.js` 播放 HTTPS `.m3u8`，支持切集、Escape / 遮罩 / 按钮关闭及 fatal network/media 恢复。
+- Featured `Void Empress` 横幅为项目内原创图片资源 `public/anime/void-empress-hero.png`；卡片封面使用远程图片 URL。
+- `scripts/sync-maccms-anime.ts` 使用仅服务端可用的 `SUPABASE_SERVICE_ROLE_KEY` 和浏览器 User-Agent 分页读取可配置的 MacCMS v10 API，将 HTTPS `.m3u8` 剧集数据按 `external_id` 逐页批量 upsert 到 `public.animes`；MacCMS `type_name` 会去重追加到 `genres`。支持 `--all` 自动读取 `pagecount/total`、逗号分隔或重复的 `--type`、`--delay MS` 节流，以及固定范围的 `--start-page/--pages`；当 `--all` source 为 `t=4` 时自动遍历 4/29/30/31/32/33 六类动漫。
+- `public.animes` Schema 与只读 anon/authenticated RLS 位于 `supabase/migrations/20260912_create_animes.sql`。Service-role key 只能放在被 Git 忽略的 `.env.local` 或进程环境中，禁止使用 `VITE_` 前缀或进入客户端 bundle。
+- `.github/workflows/daily-sync.yml` 在每天 00:00 / 12:00 UTC 或手动触发时使用 GitHub Repository Secrets 执行最近 3 页的动漫增量同步；workflow 权限保持为只读仓库内容，并用 concurrency 防止同步任务重叠。
 
 ## 6. 响应式与交互规范
 
