@@ -12,11 +12,14 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 -- 设置 RLS 策略
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own transactions" ON public.transactions;
 CREATE POLICY "Users can view own transactions" ON public.transactions
   FOR SELECT USING (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "Users can insert own transactions" ON public.transactions;
 CREATE POLICY "Users can insert own transactions" ON public.transactions
   FOR INSERT WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "Users can delete own transactions" ON public.transactions;
 CREATE POLICY "Users can delete own transactions" ON public.transactions
   FOR DELETE USING (auth.uid() = profile_id);

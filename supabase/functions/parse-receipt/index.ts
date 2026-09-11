@@ -45,6 +45,7 @@ interface JsonImagePayload {
   image_base64?: unknown;
   mimeType?: unknown;
   mime_type?: unknown;
+  imageUrl?: unknown;
 }
 
 interface GeminiResponse {
@@ -152,9 +153,32 @@ async function imageFromRequest(request: Request): Promise<{ data: string; mimeT
     } catch {
       throw new RequestError('The JSON request body is invalid.');
     }
+    if (typeof payload.imageUrl === 'string') {
+      const publicBaseUrl = Deno.env.get('R2_PUBLIC_URL')?.trim().replace(/\/+$/, '');
+      if (!publicBaseUrl) throw new Error('Missing required environment variable: R2_PUBLIC_URL');
+      let imageUrl: URL;
+      try {
+        imageUrl = new URL(payload.imageUrl);
+      } catch {
+        throw new RequestError('imageUrl must be a valid URL.');
+      }
+      if (!imageUrl.href.startsWith(`${publicBaseUrl}/`)) {
+        throw new RequestError('imageUrl must use the configured R2 public URL.');
+      }
+      const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(15_000) });
+      if (!imageResponse.ok) throw new RequestError('Unable to download the receipt image from R2.', 502);
+      const responseContentType = imageResponse.headers.get('content-type') ?? '';
+      if (!responseContentType.toLowerCase().startsWith('image/')) {
+        throw new RequestError('The R2 object must be an image.');
+      }
+      const bytes = new Uint8Array(await imageResponse.arrayBuffer());
+      if (bytes.length === 0) throw new RequestError('The R2 image is empty.');
+      if (bytes.length > 10 * 1024 * 1024) throw new RequestError('The R2 image exceeds the 10MB processing limit.', 413);
+      return { data: bytesToBase64(bytes), mimeType: normalizeMimeType(responseContentType) };
+    }
     const base64 = [payload.base64, payload.image_base64, payload.image]
       .find((value): value is string => typeof value === 'string');
-    if (!base64) throw new RequestError('JSON must contain a base64, image_base64, or image string.');
+    if (!base64) throw new RequestError('JSON must contain imageUrl, base64, image_base64, or image.');
     const requestedMimeType = typeof payload.mimeType === 'string'
       ? payload.mimeType
       : typeof payload.mime_type === 'string' ? payload.mime_type : 'image/jpeg';

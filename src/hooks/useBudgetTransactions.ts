@@ -10,12 +10,17 @@ interface TransactionRow {
   description: string;
   date: string;
   transaction_time: string | null;
-  category: TransactionCategory;
+  category: string;
   created_at: string;
   original_currency: CurrencyCode | null;
   original_amount: number | string | null;
   exchange_rate: number | string | null;
 }
+
+const normalizeCategory = (category: string, type: TransactionType): TransactionCategory => {
+  if (category === 'other') return type === 'income' ? 'other_income' : 'other_expense';
+  return category as TransactionCategory;
+};
 
 const fromRow = (row: TransactionRow): BudgetTransaction => ({
   id: row.id,
@@ -25,7 +30,7 @@ const fromRow = (row: TransactionRow): BudgetTransaction => ({
   description: row.description,
   transactionDate: row.date,
   transaction_time: row.transaction_time ?? undefined,
-  category: row.category,
+  category: normalizeCategory(row.category, row.type),
   createdAt: row.created_at,
   originalCurrency: row.original_currency ?? undefined,
   originalAmount: row.original_amount === null ? undefined : Number(row.original_amount),

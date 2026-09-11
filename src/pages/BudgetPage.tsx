@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CalendarDays, Camera, Car, CircleDollarSign, Clapperboard, HeartPulse, LoaderCircle, Pencil, Plus, ReceiptText, Search, ShoppingCart, Trash2, Utensils, WalletCards, X, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CalendarDays, Camera, Car, CircleDollarSign, Clapperboard, HeartPulse, LoaderCircle, Plus, ReceiptText, Search, ShoppingCart, Utensils, WalletCards, X, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import imageCompression from 'browser-image-compression';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -8,17 +8,23 @@ import { useBudgetTransactions } from '@/hooks/useBudgetTransactions';
 import { getMyrPerCurrency } from '@/lib/exchangeRates';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 import { TransactionEditModal } from '@/components/Budget/TransactionEditModal';
+import { TransactionDetailModal } from '@/components/Budget/TransactionDetailModal';
 import { ExchangeRateAttribution } from '@/components/Budget/ExchangeRateAttribution';
 import { filterBudgetTransactions, type CategoryFilter, type DateRangePreset, type TransactionTypeFilter } from '@/lib/budgetFilters';
 import { checkDuplicateTransaction, type DuplicateCheckResult, type ParsedOCRResult } from '@/lib/deduplication';
 import { supabase } from '@/lib/supabase';
-import type { BudgetTransaction, CurrencyCode, NewBudgetTransaction, TransactionCategory, TransactionType } from '@/types/budget';
+import { uploadToR2 } from '@/lib/storage';
+import { categoriesForType, expenseCategories, incomeCategories, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
 
 const baseCurrency: CurrencyCode = 'MYR';
 const currencies: CurrencyCode[] = ['MYR', 'USD', 'SGD', 'JPY', 'EUR', 'GBP', 'CNY', 'THB', 'TWD'];
-const categories: TransactionCategory[] = ['salary', 'groceries', 'food', 'transport', 'utilities', 'entertainment', 'freelance', 'healthcare', 'other'];
 const categoryStyle: Record<TransactionCategory, { icon: typeof CircleDollarSign; classes: string }> = {
   salary: { icon: CircleDollarSign, classes: 'bg-emerald-500/15 text-emerald-400' },
+  bonus: { icon: ArrowUpRight, classes: 'bg-lime-500/15 text-lime-400' },
+  red_packet: { icon: Banknote, classes: 'bg-red-500/15 text-red-400' },
+  allowance: { icon: WalletCards, classes: 'bg-teal-500/15 text-teal-400' },
+  investment: { icon: ArrowUpRight, classes: 'bg-blue-500/15 text-blue-400' },
+  other_income: { icon: CircleDollarSign, classes: 'bg-cyan-500/15 text-cyan-400' },
   groceries: { icon: ShoppingCart, classes: 'bg-orange-500/15 text-orange-400' },
   food: { icon: Utensils, classes: 'bg-amber-500/15 text-amber-400' },
   transport: { icon: Car, classes: 'bg-violet-500/15 text-violet-400' },
@@ -26,7 +32,8 @@ const categoryStyle: Record<TransactionCategory, { icon: typeof CircleDollarSign
   entertainment: { icon: Clapperboard, classes: 'bg-pink-500/15 text-pink-400' },
   freelance: { icon: Banknote, classes: 'bg-cyan-500/15 text-cyan-400' },
   healthcare: { icon: HeartPulse, classes: 'bg-rose-500/15 text-rose-400' },
-  other: { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' },
+  shopping: { icon: ShoppingCart, classes: 'bg-fuchsia-500/15 text-fuchsia-400' },
+  other_expense: { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' },
 };
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -92,6 +99,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const [scanningReceipt, setScanningReceipt] = useState(false);
   const [duplicateMatch, setDuplicateMatch] = useState<DuplicateCheckResult | null>(null);
   const [batchItems, setBatchItems] = useState<BatchImportItem[]>([]);
+  const [viewing, setViewing] = useState<BudgetTransaction | null>(null);
   const [editing, setEditing] = useState<BudgetTransaction | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BudgetTransaction | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -107,7 +115,6 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const chartDrag = useRef({ active: false, startX: 0, scrollLeft: 0 });
   const locale = i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US';
   const currency = useMemo(() => new Intl.NumberFormat(locale, { style: 'currency', currency: baseCurrency, currencyDisplay: 'narrowSymbol' }), [locale]);
-  const originalNumber = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }), [locale]);
   const selectedCurrency = form.originalCurrency ?? baseCurrency;
   const exchangeRate = selectedCurrency === baseCurrency ? 1 : (form.exchangeRate ?? 0);
   const convertedAmount = Number.isFinite(form.amount * exchangeRate) ? Math.round(form.amount * exchangeRate * 100) / 100 : 0;
@@ -127,9 +134,8 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
         maxWidthOrHeight: 1920,
         useWebWorker: true,
       });
-      const formData = new FormData();
-      formData.append('file', compressedFile);
-      const { data, error: invokeError } = await supabase.functions.invoke<ReceiptFunctionResponse>('parse-receipt', { body: formData });
+      const imageUrl = await uploadToR2(compressedFile, 'receipts');
+      const { data, error: invokeError } = await supabase.functions.invoke<ReceiptFunctionResponse>('parse-receipt', { body: { imageUrl } });
       if (invokeError) {
         setFormError(await receiptInvokeErrorMessage(invokeError, t('budget.form.scanError'), t('budget.form.scanRateLimit'), t('budget.form.scanServiceUnavailable')));
         return;
@@ -141,8 +147,9 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
       }
       if (!Array.isArray(data.transactions) || data.transactions.length === 0) throw new Error(t('budget.form.scanNoTransactions'));
       const parsedItems = data.transactions.map((item, index): BatchImportItem => {
-        const suggestedCategory = item.suggested_category.toLocaleLowerCase() as TransactionCategory;
-        const category = categories.includes(suggestedCategory) ? suggestedCategory : 'other';
+        const normalizedCategory = item.suggested_category.toLocaleLowerCase();
+        const suggestedCategory = normalizedCategory === 'other' ? 'other_expense' : normalizedCategory as TransactionCategory;
+        const category = categoriesForType(item.type).includes(suggestedCategory) ? suggestedCategory : item.type === 'income' ? 'other_income' : 'other_expense';
         const parsed: ParsedOCRResult = { amount: item.amount, date: item.date, time: item.transaction_time, description: item.description };
         const duplicate = checkDuplicateTransaction(parsed, transactions);
         return {
@@ -161,7 +168,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
       setRateError(null);
     } catch (cause) {
       console.error('Receipt scan failed.', cause);
-      setFormError(t('budget.form.scanError'));
+      setFormError(cause instanceof Error ? cause.message : t('budget.form.scanError'));
     } finally {
       setScanningReceipt(false);
       input.value = '';
@@ -227,6 +234,26 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   }, [transactions]);
 
   const filteredTransactions = useMemo(() => filterBudgetTransactions(transactions, { search, category: categoryFilter, type: typeFilter, dateRange, customFrom, customTo }, category => t(`budget.categories.${category}`)), [categoryFilter, customFrom, customTo, dateRange, search, t, transactions, typeFilter]);
+
+  const groupedTransactions = useMemo(() => {
+    const groups = new Map<string, BudgetTransaction[]>();
+    filteredTransactions.slice(0, 50).forEach(item => groups.set(item.transactionDate, [...(groups.get(item.transactionDate) ?? []), item]));
+    return [...groups.entries()].map(([date, items]) => ({ date, items, total: items.reduce((sum, item) => sum + (item.type === 'income' ? item.amount : -item.amount), 0) }));
+  }, [filteredTransactions]);
+
+  const visualSummary = useMemo(() => {
+    let income = 0, expense = 0;
+    const categoryTotals = new Map<TransactionCategory, number>();
+    filteredTransactions.forEach(item => {
+      if (item.type === 'income') income += item.amount;
+      else {
+        expense += item.amount;
+        categoryTotals.set(item.category, (categoryTotals.get(item.category) ?? 0) + item.amount);
+      }
+    });
+    const topCategories = [...categoryTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([category, amount]) => ({ category, amount, percent: expense > 0 ? amount / expense * 100 : 0 }));
+    return { income, expense, net: income - expense, topCategories };
+  }, [filteredTransactions]);
 
   const chartData = useMemo(() => {
     const buckets = new Map<string, { key: string; income: number; expenses: number }>();
@@ -302,7 +329,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
         <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-xl shadow-black/10">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label className="relative block"><span className="sr-only">{t('budget.filters.search')}</span><Search size={16} className="pointer-events-none absolute left-3 top-3.5 text-slate-500"/><input value={search} onChange={event => setSearch(event.target.value)} placeholder={t('budget.filters.searchPlaceholder')} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-indigo-500"/></label>
-            <label><span className="sr-only">{t('budget.filters.category')}</span><select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value as CategoryFilter)} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white outline-none focus:border-indigo-500"><option value="all">{t('budget.filters.allCategories')}</option>{categories.map(category => <option key={category} value={category}>{t(`budget.categories.${category}`)}</option>)}</select></label>
+            <label><span className="sr-only">{t('budget.filters.category')}</span><select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value as CategoryFilter)} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white outline-none focus:border-indigo-500"><option value="all">{t('budget.filters.allCategories')}</option><optgroup label={t('budget.categoryGroups.income')}>{incomeCategories.map(category => <option key={category} value={category}>{t(`budget.categories.${category}`)}</option>)}</optgroup><optgroup label={t('budget.categoryGroups.expense')}>{expenseCategories.map(category => <option key={category} value={category}>{t(`budget.categories.${category}`)}</option>)}</optgroup></select></label>
             <label><span className="sr-only">{t('budget.filters.type')}</span><select value={typeFilter} onChange={event => setTypeFilter(event.target.value as TransactionTypeFilter)} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white outline-none focus:border-indigo-500"><option value="all">{t('budget.filters.allTypes')}</option><option value="income">{t('budget.income')}</option><option value="expense">{t('budget.expense')}</option></select></label>
             <label><span className="sr-only">{t('budget.filters.dateRange')}</span><select value={dateRange} onChange={event => setDateRange(event.target.value as DateRangePreset)} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white outline-none focus:border-indigo-500">{(['all','week','month','threeMonths','custom'] as DateRangePreset[]).map(range => <option key={range} value={range}>{t(`budget.filters.ranges.${range}`)}</option>)}</select></label>
           </div>
@@ -317,15 +344,16 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
             <CartesianGrid stroke="#1e293b" vertical={false} strokeDasharray="4 4"/><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10}/><YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={(value: number) => `RM ${value / 1000}k`}/><Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 12 }} labelStyle={{ color: '#f8fafc' }} formatter={value => currency.format(Number(value))}/><Area type="monotone" dataKey="income" name={t('budget.income')} stroke="#34d399" strokeWidth={2.5} fill="url(#incomeFill)"/><Area type="monotone" dataKey="expenses" name={t('budget.expense')} stroke="#fb7185" strokeWidth={2.5} fill="url(#expenseFill)"/>
           </AreaChart></ResponsiveContainer></div></div>
         </section>
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+          <div className="grid gap-3 sm:grid-cols-3">{[
+            { label: t('budget.visual.totalIncome'), value: visualSummary.income, color: 'text-emerald-400', bar: 'bg-emerald-400' },
+            { label: t('budget.visual.totalExpense'), value: visualSummary.expense, color: 'text-rose-400', bar: 'bg-rose-400' },
+            { label: t('budget.visual.netBalance'), value: visualSummary.net, color: visualSummary.net >= 0 ? 'text-indigo-300' : 'text-rose-300', bar: 'bg-indigo-400' },
+          ].map(item => <article key={item.label} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</p><p className={`mt-2 text-xl font-bold ${item.color}`}>{currency.format(item.value)}</p><div className="mt-4 h-1 overflow-hidden rounded-full bg-slate-800"><div className={`h-full w-2/3 rounded-full ${item.bar}`}/></div></article>)}</div>
+          <article className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4"><h3 className="font-semibold text-white">{t('budget.visual.topCategories')}</h3><div className="mt-4 space-y-3">{visualSummary.topCategories.length === 0 ? <p className="text-sm text-slate-500">{t('budget.visual.noExpenses')}</p> : visualSummary.topCategories.map(({ category, amount, percent }, index) => <div key={category}><div className="mb-1 flex items-center justify-between gap-3 text-xs"><span className="truncate text-slate-300">{t(`budget.categories.${category}`)}</span><span className="shrink-0 text-slate-500">{percent.toFixed(0)}% · {currency.format(amount)}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-800"><div className={['bg-indigo-400','bg-rose-400','bg-amber-400','bg-cyan-400','bg-fuchsia-400'][index]} style={{ width: `${percent}%`, height: '100%' }}/></div></div>)}</div></article>
+        </section>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl shadow-black/10"><div className="flex items-center justify-between border-b border-slate-800 px-5 py-4"><h2 className="font-semibold text-white">{t('budget.recent.title')}</h2><span className="text-xs text-slate-500">{t('budget.recent.count', { count: filteredTransactions.length })}</span></div><div data-horizontal-scroll className="overflow-x-auto"><table className="w-full min-w-[740px] text-left">
-          <thead className="bg-slate-950/40 text-[11px] uppercase tracking-wider text-slate-500"><tr>{(['date','description','category','amount'] as const).map(key => <th key={key} className={`px-5 py-3 font-medium ${key === 'amount' ? 'text-right' : ''}`}>{t(`budget.recent.${key}`)}</th>)}<th className="px-3 py-3 text-right font-medium">{t('budget.recent.actions')}</th></tr></thead>
-          <tbody className="divide-y divide-slate-800/80">{loading ? <tr><td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-500"><LoaderCircle className="mx-auto mb-2 animate-spin" size={20}/>{t('budget.loading')}</td></tr> : filteredTransactions.length === 0 ? <tr><td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-500">{t('budget.recent.noMatches')}</td></tr> : filteredTransactions.slice(0, 50).map(item => {
-            const style = categoryStyle[item.category], Icon = style.icon;
-            const showOriginal = item.originalCurrency && item.originalCurrency !== baseCurrency && item.originalAmount !== undefined;
-            return <tr key={item.id} className="transition hover:bg-slate-800/35"><td className="whitespace-nowrap px-5 py-4 text-sm text-slate-400">{new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${item.transactionDate}T00:00:00Z`))}</td><td className="px-5 py-4 text-sm font-medium text-slate-200">{item.description}</td><td className="px-5 py-4"><span className={`inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium ${style.classes}`}><Icon size={14}/>{t(`budget.categories.${item.category}`)}</span></td><td className={`whitespace-nowrap px-5 py-4 text-right text-sm font-semibold ${item.type === 'income' ? 'text-emerald-400' : 'text-rose-300'}`}><span className="block">{item.type === 'income' ? '+' : '-'}{currency.format(item.amount)}</span>{showOriginal && <span className="mt-1 block text-xs font-normal text-slate-500">({originalNumber.format(item.originalAmount!)} {item.originalCurrency})</span>}</td><td className="px-3 py-2"><div className="flex justify-end gap-1"><button type="button" onClick={() => setEditing(item)} aria-label={t('budget.edit.action')} className="flex size-11 items-center justify-center rounded-lg text-slate-500 transition hover:bg-indigo-500/10 hover:text-indigo-400"><Pencil size={16}/></button><button type="button" onClick={() => setDeleteTarget(item)} aria-label={t('budget.delete.action')} className="flex size-11 items-center justify-center rounded-lg text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400"><Trash2 size={16}/></button></div></td></tr>;
-          })}</tbody>
-        </table></div></section>
+        <section><div className="mb-3 flex items-center justify-between px-1"><h2 className="font-semibold text-white">{t('budget.recent.title')}</h2><span className="text-xs text-slate-500">{t('budget.recent.count', { count: filteredTransactions.length })}</span></div>{loading ? <div className="rounded-2xl border border-slate-800 bg-slate-900/80 py-12 text-center text-sm text-slate-500"><LoaderCircle className="mx-auto mb-2 animate-spin" size={20}/>{t('budget.loading')}</div> : groupedTransactions.length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900/80 py-12 text-center text-sm text-slate-500">{t('budget.recent.noMatches')}</div> : <div className="space-y-5">{groupedTransactions.map(group => <article key={group.date} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl shadow-black/10"><header className="flex items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/35 px-4 py-3"><h3 className="text-sm font-semibold text-slate-200">{new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${group.date}T00:00:00Z`))}</h3><p className={`text-sm font-semibold ${group.total >= 0 ? 'text-emerald-400' : 'text-rose-300'}`}>{t('budget.recent.dayTotal')}: {group.total >= 0 ? '+' : '-'}{currency.format(Math.abs(group.total))}</p></header><div className="divide-y divide-slate-800/80">{group.items.map(item => { const style = categoryStyle[item.category], Icon = style.icon; return <button type="button" key={item.id} onClick={() => setViewing(item)} className="grid min-h-16 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"><span className={`rounded-xl p-2.5 ${style.classes}`}><Icon size={18}/></span><span className="min-w-0"><strong className="block truncate text-sm text-slate-100">{item.description}</strong><span className="mt-1 block truncate text-xs text-slate-500">{item.transaction_time || t('budget.detail.notRecorded')} · {t(`budget.categories.${item.category}`)}</span></span><span className={`whitespace-nowrap text-sm font-bold ${item.type === 'income' ? 'text-emerald-400' : 'text-rose-300'}`}>{item.type === 'income' ? '+' : '-'}{currency.format(item.amount)}</span></button>; })}</div></article>)}</div>}</section>
       </div>
 
       <button type="button" aria-label={t('sidebar.closeTools')} onClick={onCloseTools} className={`fixed inset-0 z-[55] bg-slate-950/60 backdrop-blur-sm transition-opacity md:hidden ${toolsOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}/>
@@ -348,7 +376,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
             <div className="grid grid-cols-2 gap-2"><button type="button" disabled={saving} onClick={() => setBatchItems([])} className="min-h-11 rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-300 hover:bg-slate-800">{t('common.cancel')}</button><button type="button" disabled={saving || !batchItems.some(item => item.selected)} onClick={() => void importBatch()} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{saving && <LoaderCircle size={16} className="animate-spin"/>}{t('budget.form.batchImport', { count: batchItems.filter(item => item.selected).length })}</button></div>
           </section>}
           {duplicateMatch?.matchedTransaction && <div role="alert" className="rounded-xl border border-amber-500/70 bg-amber-500/15 p-4 text-amber-100 shadow-lg shadow-amber-950/20"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={21}/><div><p className="font-bold">{t('budget.form.duplicateWarningTitle')}</p><p className="mt-1 text-sm text-amber-200">{t('budget.form.duplicateWarningDesc', { date: duplicateMatch.matchedTransaction.date ?? duplicateMatch.matchedTransaction.transactionDate ?? '', amount: currency.format(duplicateMatch.matchedTransaction.amount), merchant: duplicateMatch.matchedTransaction.description })}</p></div></div></div>}
-          <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.type')}</legend><div className="grid grid-cols-2 rounded-xl bg-slate-950 p-1">{(['income', 'expense'] as TransactionType[]).map(type => <button key={type} type="button" onClick={() => setForm(current => ({ ...current, type }))} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${form.type === type ? type === 'income' ? 'bg-emerald-700 text-white shadow' : 'bg-rose-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>{t(`budget.${type}`)}</button>)}</div></fieldset>
+          <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.type')}</legend><div className="grid grid-cols-2 rounded-xl bg-slate-950 p-1">{(['income', 'expense'] as TransactionType[]).map(type => <button key={type} type="button" onClick={() => setForm(current => ({ ...current, type, category: categoriesForType(type)[0] }))} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${form.type === type ? type === 'income' ? 'bg-emerald-700 text-white shadow' : 'bg-rose-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>{t(`budget.${type}`)}</button>)}</div></fieldset>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.currency')}</span><select value={selectedCurrency} onChange={event => void changeCurrency(event.target.value as CurrencyCode)} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select></label>
             <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.amount')} ({selectedCurrency})</span><input required min="0.01" step="0.01" type="number" value={form.amount || ''} onChange={event => setForm(current => ({ ...current, amount: event.target.valueAsNumber }))} placeholder="0.00" className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-indigo-500"/></label>
@@ -361,11 +389,18 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
           {rateError && <p role="alert" className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-400">{rateError}</p>}
           <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.description')}</span><input required maxLength={160} value={form.description} onChange={event => setForm(current => ({ ...current, description: event.target.value }))} placeholder={t('budget.form.descriptionPlaceholder')} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-indigo-500"/></label>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.date')}</span><span className="relative block"><CalendarDays size={16} className="pointer-events-none absolute left-3 top-3 text-slate-500"/><input required type="date" value={form.transactionDate} onChange={event => setForm(current => ({ ...current, transactionDate: event.target.value }))} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm text-white outline-none focus:border-indigo-500"/></span></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.time')}</span><input type="time" value={form.transaction_time ?? ''} onChange={event => setForm(current => ({ ...current, transaction_time: event.target.value }))} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500"/></label></div>
-          <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.category')}</span><select value={form.category} onChange={event => setForm(current => ({ ...current, category: event.target.value as TransactionCategory }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">{categories.map(category => <option key={category} value={category}>{t(`budget.categories.${category}`)}</option>)}</select></label>
+          <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.category')}</span><select value={form.category} onChange={event => setForm(current => ({ ...current, category: event.target.value as TransactionCategory }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500"><optgroup label={t(`budget.categoryGroups.${form.type}`)}>{categoriesForType(form.type).map(category => <option key={category} value={category}>{t(`budget.categories.${category}`)}</option>)}</optgroup></select></label>
           <button disabled={saving || loadingRate} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60">{saving ? <LoaderCircle size={17} className="animate-spin"/> : <Plus size={17}/>} {saving ? t('budget.form.saving') : t('budget.form.save')}</button>
         </form>
       </aside>
     </div>
+    {viewing && <TransactionDetailModal
+      transaction={viewing}
+      locale={locale}
+      onClose={() => setViewing(null)}
+      onEdit={() => { setViewing(null); setEditing(viewing); }}
+      onDelete={() => { setViewing(null); setDeleteTarget(viewing); }}
+    />}
     {editing && <TransactionEditModal key={editing.id} transaction={editing} onClose={() => setEditing(null)} onSave={value => updateTransaction(editing.id, value)}/>}
     <DeleteConfirmDialog open={deleteTarget !== null} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} title={t('budget.delete.title')} message={t('budget.delete.message', { description: deleteTarget?.description ?? '' })}/>
   </div>;

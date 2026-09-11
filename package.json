@@ -15,6 +15,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1130.0",
     "@supabase/supabase-js": "^2.112.4",
     "@tailwindcss/vite": "^4.3.3",
     "@types/hls.js": "^1.0.0",
@@ -32,7 +33,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/html2pdf.js": "^0.10.0",
-    "@types/node": "^24.13.3",
+    "@types/node": "^24.13.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
