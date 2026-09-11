@@ -52,7 +52,7 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm" onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="edit-profile-title" className="my-auto w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+      <section role="dialog" aria-modal="true" aria-labelledby="edit-profile-title" className="my-auto w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-2xl sm:p-6">
         <div className="mb-6 flex items-center justify-between"><div><h2 id="edit-profile-title" className="text-2xl font-semibold text-white">Edit profile</h2><p className="mt-1 text-sm text-slate-400">Update the information shown on your profile card.</p></div><button type="button" onClick={onClose} disabled={saving} aria-label="Close edit profile" className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"><X size={20} /></button></div>
         <form onSubmit={save} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">

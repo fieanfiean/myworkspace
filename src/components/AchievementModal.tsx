@@ -13,7 +13,7 @@ type AchievementModalProps = {
   onSubmit: (value: AchievementFormValue) => void | Promise<void>;
 };
 
-const control = 'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+const control = 'min-h-11 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
 const CUSTOM_RANK = '__custom__';
 const rankPresets = [
   { value: '1st Place (Champion)', key: 'first' },
@@ -111,7 +111,7 @@ export function AchievementModal({ open, initialValue, onClose, onSubmit }: Achi
         <button type="button" disabled={busy} aria-label="Close" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 disabled:opacity-50"><X size={20}/></button>
       </header>
 
-      <form onSubmit={submit} className="grid max-h-[80vh] grid-cols-2 gap-4 overflow-y-auto p-6">
+      <form onSubmit={submit} className="mobile-form-grid grid max-h-[80dvh] grid-cols-2 gap-4 overflow-y-auto p-4 sm:p-6">
         <label className="col-span-2 text-sm text-slate-300"><span className="mb-1.5 block font-medium">Category *</span><select className={control} value={category} onChange={event => setCategory(event.target.value as AchievementCategory)}><option value="project">Project</option><option value="award">Award &amp; Honor</option><option value="certification">Certification / Workshop</option></select></label>
         <label className="text-sm text-slate-300"><span className="mb-1.5 block font-medium">Title *</span><input className={control} value={title} onChange={event => setTitle(event.target.value)}/></label>
         <label className="text-sm text-slate-300"><span className="mb-1.5 block font-medium">Year *</span><input className={control} value={year} onChange={event => setYear(event.target.value)}/></label>

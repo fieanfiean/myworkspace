@@ -112,10 +112,10 @@ export function ExportPanel({ data }: ExportPanelProps) {
 
   const exportDisabled = exportingKind !== null || !Object.values(selected).some(Boolean);
   return <>
-    <aside className="export-panel-container h-fit p-4">
+    <aside className="export-panel-container h-fit w-full p-4 xl:sticky xl:top-6 xl:w-80">
       <h3 className="mb-4 text-xl font-bold text-white">{t('exportPanel.title')}</h3>
-      <div className="space-y-3"><p className="text-xs font-bold tracking-wider text-slate-500">{t('exportPanel.selectSections')}</p>{labels.map(item => <label key={item.key} className="flex cursor-pointer items-center gap-3 text-sm text-slate-300"><input type="checkbox" checked={selected[item.key]} onChange={() => toggle(item.key)} className="h-4 w-4 rounded accent-blue-600" /><span>{item.label}</span></label>)}</div>
-      <div className="mt-5 space-y-2">
+      <div className="space-y-2"><p className="text-xs font-bold tracking-wider text-slate-500">{t('exportPanel.selectSections')}</p>{labels.map(item => <label key={item.key} className="flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-lg px-2 text-sm text-slate-300 transition hover:bg-slate-800/40"><input type="checkbox" checked={selected[item.key]} onChange={() => toggle(item.key)} className="h-5 w-5 shrink-0 rounded accent-blue-600" /><span className="min-w-0">{item.label}</span></label>)}</div>
+      <div className="mt-5 flex w-full flex-col gap-2">
         {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
         <button type="button" onClick={() => void exportDocument('cv')} disabled={exportDisabled} className="btn-primary-lg disabled:cursor-not-allowed disabled:opacity-60">{exportingKind === 'cv' ? <LoaderCircle className="animate-spin" size={18} /> : <Download size={18} />}<span>{exportingKind === 'cv' ? 'Generating CV…' : t('exportPanel.btnExportCv')}</span></button>
         <button type="button" onClick={() => void exportDocument('resume')} disabled={exportDisabled} className="btn-secondary-lg border border-slate-600 disabled:cursor-not-allowed disabled:opacity-60">{exportingKind === 'resume' ? <LoaderCircle className="animate-spin" size={18} /> : <FileText size={18} />}<span>{exportingKind === 'resume' ? 'Generating Resume…' : t('exportPanel.btnExportResume')}</span></button>
