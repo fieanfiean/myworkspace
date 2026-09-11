@@ -125,3 +125,10 @@
 4. 不在组件中复制汇率、筛选、排序、上传等领域逻辑，分别复用 `exchangeRates.ts`、`budgetFilters.ts`、`timelineSort.ts`、`storage.ts`。
 5. 修改完成后至少运行与风险相称的 `npm run lint`、`npm run build` 或目标测试。
 6. 不创建额外的 `AGENTS.md`；项目上下文统一维护在本 `agent.md`。
+
+## 8. Netlify Deployment Policy
+
+- Deployments must use local CLI-built static assets to preserve zero Netlify Build Minutes consumption. Never rely on Netlify Git-triggered continuous deployment.
+- Never modify Netlify cloud build settings through `netlify.toml` or project configuration.
+- Deploy staging only with `npm run deploy:staging`. This runs `npm run build:staging` followed by `netlify deploy --alias staging --dir dist --no-build`.
+- Deploy production only with `npm run deploy:prod`. This runs `npm run build:prod` followed by `netlify deploy --prod --dir dist --no-build`.
