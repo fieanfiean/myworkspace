@@ -16,10 +16,20 @@ export type TransactionCategory =
   | 'healthcare'
   | 'shopping'
   | 'other_expense'
-  | 'freelance';
+  | 'freelance'
+  | 'bills'
+  | 'clothing'
+  | 'education'
+  | 'fitness'
+  | 'gifts'
+  | 'health'
+  | 'others'
+  | 'tips'
+  | 'transportation'
+  | 'travel';
 
-export const incomeCategories = ['salary', 'bonus', 'red_packet', 'allowance', 'freelance', 'investment', 'other_income'] as const satisfies readonly TransactionCategory[];
-export const expenseCategories = ['food', 'groceries', 'transport', 'utilities', 'entertainment', 'healthcare', 'shopping', 'other_expense'] as const satisfies readonly TransactionCategory[];
+export const incomeCategories = ['salary', 'bonus', 'red_packet', 'allowance', 'freelance', 'investment', 'tips', 'other_income'] as const satisfies readonly TransactionCategory[];
+export const expenseCategories = ['food', 'groceries', 'bills', 'clothing', 'education', 'entertainment', 'fitness', 'gifts', 'health', 'shopping', 'transportation', 'travel', 'others', 'transport', 'utilities', 'healthcare', 'other_expense'] as const satisfies readonly TransactionCategory[];
 
 export function categoriesForType(type: TransactionType): readonly TransactionCategory[] {
   return type === 'income' ? incomeCategories : expenseCategories;

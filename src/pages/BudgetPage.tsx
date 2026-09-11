@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CalendarDays, Camera, Car, CircleDollarSign, Clapperboard, HeartPulse, LoaderCircle, Plus, ReceiptText, Search, ShoppingCart, Utensils, WalletCards, X, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, BookOpen, CalendarDays, Camera, Car, CircleDollarSign, Clapperboard, Dumbbell, Gift, HeartPulse, LoaderCircle, Plane, Plus, ReceiptText, Search, Shirt, ShoppingCart, Utensils, WalletCards, X, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import imageCompression from 'browser-image-compression';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -17,6 +17,7 @@ import { uploadToR2 } from '@/lib/storage';
 import { categoriesForType, expenseCategories, incomeCategories, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
 
 const baseCurrency: CurrencyCode = 'MYR';
+const transactionPageSize = 50;
 const currencies: CurrencyCode[] = ['MYR', 'USD', 'SGD', 'JPY', 'EUR', 'GBP', 'CNY', 'THB', 'TWD'];
 const categoryStyle: Record<TransactionCategory, { icon: typeof CircleDollarSign; classes: string }> = {
   salary: { icon: CircleDollarSign, classes: 'bg-emerald-500/15 text-emerald-400' },
@@ -34,7 +35,18 @@ const categoryStyle: Record<TransactionCategory, { icon: typeof CircleDollarSign
   healthcare: { icon: HeartPulse, classes: 'bg-rose-500/15 text-rose-400' },
   shopping: { icon: ShoppingCart, classes: 'bg-fuchsia-500/15 text-fuchsia-400' },
   other_expense: { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' },
+  bills: { icon: Zap, classes: 'bg-sky-500/15 text-sky-400' },
+  clothing: { icon: Shirt, classes: 'bg-pink-500/15 text-pink-400' },
+  education: { icon: BookOpen, classes: 'bg-blue-500/15 text-blue-400' },
+  fitness: { icon: Dumbbell, classes: 'bg-lime-500/15 text-lime-400' },
+  gifts: { icon: Gift, classes: 'bg-fuchsia-500/15 text-fuchsia-400' },
+  health: { icon: HeartPulse, classes: 'bg-rose-500/15 text-rose-400' },
+  others: { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' },
+  tips: { icon: Banknote, classes: 'bg-emerald-500/15 text-emerald-400' },
+  transportation: { icon: Car, classes: 'bg-violet-500/15 text-violet-400' },
+  travel: { icon: Plane, classes: 'bg-cyan-500/15 text-cyan-400' },
 };
+const fallbackCategoryStyle = { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' };
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 const percentChange = (current: number, previous: number) => previous === 0 ? (current === 0 ? 0 : 100) : ((current - previous) / previous) * 100;
@@ -109,6 +121,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const [dateRange, setDateRange] = useState<DateRangePreset>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [transactionPage, setTransactionPage] = useState({ filterKey: '', count: transactionPageSize });
   const [granularity, setGranularity] = useState<ChartGranularity>('monthly');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chartScrollRef = useRef<HTMLDivElement>(null);
@@ -234,12 +247,17 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   }, [transactions]);
 
   const filteredTransactions = useMemo(() => filterBudgetTransactions(transactions, { search, category: categoryFilter, type: typeFilter, dateRange, customFrom, customTo }, category => t(`budget.categories.${category}`)), [categoryFilter, customFrom, customTo, dateRange, search, t, transactions, typeFilter]);
+  const transactionFilterKey = `${search}\u0000${categoryFilter}\u0000${typeFilter}\u0000${dateRange}\u0000${customFrom}\u0000${customTo}`;
+  const visibleTransactionCount = transactionPage.filterKey === transactionFilterKey ? transactionPage.count : transactionPageSize;
+  const setVisibleTransactionCount = (update: (count: number) => number) => {
+    setTransactionPage({ filterKey: transactionFilterKey, count: update(visibleTransactionCount) });
+  };
 
   const groupedTransactions = useMemo(() => {
     const groups = new Map<string, BudgetTransaction[]>();
-    filteredTransactions.slice(0, 50).forEach(item => groups.set(item.transactionDate, [...(groups.get(item.transactionDate) ?? []), item]));
+    filteredTransactions.slice(0, visibleTransactionCount).forEach(item => groups.set(item.transactionDate, [...(groups.get(item.transactionDate) ?? []), item]));
     return [...groups.entries()].map(([date, items]) => ({ date, items, total: items.reduce((sum, item) => sum + (item.type === 'income' ? item.amount : -item.amount), 0) }));
-  }, [filteredTransactions]);
+  }, [filteredTransactions, visibleTransactionCount]);
 
   const visualSummary = useMemo(() => {
     let income = 0, expense = 0;
@@ -353,7 +371,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
           <article className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4"><h3 className="font-semibold text-white">{t('budget.visual.topCategories')}</h3><div className="mt-4 space-y-3">{visualSummary.topCategories.length === 0 ? <p className="text-sm text-slate-500">{t('budget.visual.noExpenses')}</p> : visualSummary.topCategories.map(({ category, amount, percent }, index) => <div key={category}><div className="mb-1 flex items-center justify-between gap-3 text-xs"><span className="truncate text-slate-300">{t(`budget.categories.${category}`)}</span><span className="shrink-0 text-slate-500">{percent.toFixed(0)}% · {currency.format(amount)}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-800"><div className={['bg-indigo-400','bg-rose-400','bg-amber-400','bg-cyan-400','bg-fuchsia-400'][index]} style={{ width: `${percent}%`, height: '100%' }}/></div></div>)}</div></article>
         </section>
 
-        <section><div className="mb-3 flex items-center justify-between px-1"><h2 className="font-semibold text-white">{t('budget.recent.title')}</h2><span className="text-xs text-slate-500">{t('budget.recent.count', { count: filteredTransactions.length })}</span></div>{loading ? <div className="rounded-2xl border border-slate-800 bg-slate-900/80 py-12 text-center text-sm text-slate-500"><LoaderCircle className="mx-auto mb-2 animate-spin" size={20}/>{t('budget.loading')}</div> : groupedTransactions.length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900/80 py-12 text-center text-sm text-slate-500">{t('budget.recent.noMatches')}</div> : <div className="space-y-5">{groupedTransactions.map(group => <article key={group.date} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl shadow-black/10"><header className="flex items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/35 px-4 py-3"><h3 className="text-sm font-semibold text-slate-200">{new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${group.date}T00:00:00Z`))}</h3><p className={`text-sm font-semibold ${group.total >= 0 ? 'text-emerald-400' : 'text-rose-300'}`}>{t('budget.recent.dayTotal')}: {group.total >= 0 ? '+' : '-'}{currency.format(Math.abs(group.total))}</p></header><div className="divide-y divide-slate-800/80">{group.items.map(item => { const style = categoryStyle[item.category], Icon = style.icon; return <button type="button" key={item.id} onClick={() => setViewing(item)} className="grid min-h-16 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"><span className={`rounded-xl p-2.5 ${style.classes}`}><Icon size={18}/></span><span className="min-w-0"><strong className="block truncate text-sm text-slate-100">{item.description}</strong><span className="mt-1 block truncate text-xs text-slate-500">{item.transaction_time || t('budget.detail.notRecorded')} · {t(`budget.categories.${item.category}`)}</span></span><span className={`whitespace-nowrap text-sm font-bold ${item.type === 'income' ? 'text-emerald-400' : 'text-rose-300'}`}>{item.type === 'income' ? '+' : '-'}{currency.format(item.amount)}</span></button>; })}</div></article>)}</div>}</section>
+        <section><div className="mb-3 flex items-center justify-between px-1"><h2 className="font-semibold text-white">{t('budget.recent.title')}</h2><span className="text-xs text-slate-500">{t('budget.recent.count', { count: filteredTransactions.length })}</span></div>{loading ? <div className="rounded-2xl border border-slate-800 bg-slate-900/80 py-12 text-center text-sm text-slate-500"><LoaderCircle className="mx-auto mb-2 animate-spin" size={20}/>{t('budget.loading')}</div> : groupedTransactions.length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900/80 py-12 text-center text-sm text-slate-500">{t('budget.recent.noMatches')}</div> : <div className="space-y-5">{groupedTransactions.map(group => <article key={group.date} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl shadow-black/10"><header className="flex items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/35 px-4 py-3"><h3 className="text-sm font-semibold text-slate-200">{new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${group.date}T00:00:00Z`))}</h3><p className={`text-sm font-semibold ${group.total >= 0 ? 'text-emerald-400' : 'text-rose-300'}`}>{t('budget.recent.dayTotal')}: {group.total >= 0 ? '+' : '-'}{currency.format(Math.abs(group.total))}</p></header><div className="divide-y divide-slate-800/80">{group.items.map(item => { const style = categoryStyle[item.category] ?? fallbackCategoryStyle, Icon = style.icon ?? ReceiptText; return <button type="button" key={item.id} onClick={() => setViewing(item)} className="grid min-h-16 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"><span className={`rounded-xl p-2.5 ${style.classes}`}><Icon size={18}/></span><span className="min-w-0"><strong className="block truncate text-sm text-slate-100">{item.description}</strong><span className="mt-1 block truncate text-xs text-slate-500">{item.transaction_time || t('budget.detail.notRecorded')} · {t(`budget.categories.${item.category}`)}</span></span><span className={`whitespace-nowrap text-sm font-bold ${item.type === 'income' ? 'text-emerald-400' : 'text-rose-300'}`}>{item.type === 'income' ? '+' : '-'}{currency.format(item.amount)}</span></button>; })}</div></article>)}<div className="flex flex-col items-center gap-3 pt-1"><p className="text-xs text-slate-500">{t('budget.recent.showing', { shown: Math.min(visibleTransactionCount, filteredTransactions.length), total: filteredTransactions.length })}</p>{visibleTransactionCount < filteredTransactions.length && <button type="button" onClick={() => setVisibleTransactionCount(count => count + transactionPageSize)} className="min-h-11 rounded-xl border border-indigo-500/50 bg-indigo-500/10 px-6 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/20">{t('budget.recent.loadMore')}</button>}</div></div>}</section>
       </div>
 
       <button type="button" aria-label={t('sidebar.closeTools')} onClick={onCloseTools} className={`fixed inset-0 z-[55] bg-slate-950/60 backdrop-blur-sm transition-opacity md:hidden ${toolsOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}/>

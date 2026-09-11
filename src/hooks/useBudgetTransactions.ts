@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { BudgetTransaction, CurrencyCode, NewBudgetTransaction, TransactionCategory, TransactionType } from '@/types/budget';
+import { expenseCategories, incomeCategories, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
 
 interface TransactionRow {
   id: string;
@@ -17,9 +17,23 @@ interface TransactionRow {
   exchange_rate: number | string | null;
 }
 
+const TRANSACTION_BATCH_SIZE = 200;
+const transactionColumns = 'id,profile_id,type,amount,description,date,transaction_time,category,created_at,original_currency,original_amount,exchange_rate';
+
 const normalizeCategory = (category: string, type: TransactionType): TransactionCategory => {
-  if (category === 'other') return type === 'income' ? 'other_income' : 'other_expense';
-  return category as TransactionCategory;
+  const normalized = category.trim().toLocaleLowerCase().replace(/[\s-]+/g, '_');
+  const aliases: Record<string, TransactionCategory> = {
+    other: type === 'income' ? 'other_income' : 'others',
+    other_expense: 'others',
+    utilities: 'bills',
+    healthcare: 'health',
+    transport: 'transportation',
+  };
+  const candidate = aliases[normalized] ?? normalized as TransactionCategory;
+  const allowed = type === 'income' ? incomeCategories : expenseCategories;
+  return (allowed as readonly TransactionCategory[]).includes(candidate)
+    ? candidate
+    : type === 'income' ? 'other_income' : 'others';
 };
 
 const fromRow = (row: TransactionRow): BudgetTransaction => ({
@@ -50,18 +64,26 @@ export function useBudgetTransactions(userId: string | undefined) {
     }
 
     setLoading(true);
-    const { data, error: queryError } = await supabase
-      .from('transactions')
-      .select('id,profile_id,type,amount,description,date,transaction_time,category,created_at,original_currency,original_amount,exchange_rate')
-      .eq('profile_id', userId)
-      .order('date', { ascending: false })
-      .order('created_at', { ascending: false });
-
-    if (queryError) {
-      setError(new Error(queryError.message));
-    } else {
-      setTransactions((data as TransactionRow[]).map(fromRow));
+    try {
+      const rows: TransactionRow[] = [];
+      for (let from = 0; ; from += TRANSACTION_BATCH_SIZE) {
+        const { data, error: queryError } = await supabase
+          .from('transactions')
+          .select(transactionColumns)
+          .eq('profile_id', userId)
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, from + TRANSACTION_BATCH_SIZE - 1);
+        if (queryError) throw new Error(queryError.message);
+        const batch = (data ?? []) as TransactionRow[];
+        rows.push(...batch);
+        if (batch.length < TRANSACTION_BATCH_SIZE) break;
+      }
+      setTransactions(rows.map(fromRow));
       setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause : new Error('Unable to load transactions.'));
     }
     setLoading(false);
   }, [userId]);
