@@ -33,12 +33,13 @@
 ## 3. 构建与部署
 
 - 本地验证：`npm run lint` 和 `npm run build`。
-- Staging 无云端构建分钟部署：先运行 `npm run build`，再运行 `npx netlify deploy --alias staging --dir dist --no-build`。
+- 本地开发：默认仅使用 `npm run dev` 进行本地预览与热更新测试。
+- Staging 部署命令：`npm run deploy:staging`（内部执行 `npm run build:staging` + `npx netlify deploy --alias staging --dir dist --no-build`）。
+- Production 部署命令：`npm run deploy:prod`（内部执行 `npm run build:prod` + `npx netlify deploy --prod --dir dist --no-build`）。
 - Staging 地址：`https://staging--fieanfieanworkspace.netlify.app`。
-- 必须保留 `--no-build`，避免 Netlify 再次构建并消耗构建分钟。
-- **强制交付规则**：以后每次修改代码，都必须在本地验证和构建成功后执行 `npx netlify deploy --alias staging --dir dist --no-build`，不能只运行 `git push` 代替部署。
-- 每次完成代码修改后的回复必须明确报告 Netlify Staging 部署是否成功，并提供部署命令返回的 Preview URL / Logs URL（如有）和固定 Staging 地址，方便用户立即验收。
-- 如果部署因认证、网络、Netlify CLI 或外部服务问题失败，必须如实报告错误和阻塞原因，不能把仅本地构建或 Git 推送描述为已部署。
+- Production 地址：`https://fieanfieanworkspace.netlify.app`。
+- **部署触发规则**：禁止每次修改代码都自动执行部署。仅在用户显式要求部署，或需要验证 PWA / 线上环境特定功能时才执行对应的部署脚本。部署时必须保留 `--no-build` 参数，确保 0 构建分钟数消耗。
+- 当受命执行部署任务时，须在完成后报告部署结果及控制台返回的链接；若遇到认证或网络失败，如实报告阻塞原因。
 
 ## 4. 当前应用架构
 
@@ -130,5 +131,6 @@
 
 - Deployments must use local CLI-built static assets to preserve zero Netlify Build Minutes consumption. Never rely on Netlify Git-triggered continuous deployment.
 - Never modify Netlify cloud build settings through `netlify.toml` or project configuration.
-- Deploy staging only with `npm run deploy:staging`. This runs `npm run build:staging` followed by `netlify deploy --alias staging --dir dist --no-build`.
-- Deploy production only with `npm run deploy:prod`. This runs `npm run build:prod` followed by `netlify deploy --prod --dir dist --no-build`.
+- 日常开发或修改代码后，默认仅使用 `npm run dev` 进行本地热更新测试；不要主动建议或执行任何部署。
+- 只有用户明确要求“部署到 staging”，或功能必须通过真实线上域名验证（例如 PWA Service Worker、跨域回调）时，才使用 `npm run deploy:staging`。该命令执行 `npm run build:staging`，随后运行 `netlify deploy --alias staging --dir dist --no-build`。
+- 只有用户明确要求“上线”或“部署到 prod”时，才允许使用 `npm run deploy:prod`。该命令执行 `npm run build:prod`，随后运行 `netlify deploy --prod --dir dist --no-build`。
