@@ -37,7 +37,6 @@ function secureStreamUrl(value: string): string | null {
 export function AnimePlayerModal({ anime, onClose }: Props) {
   const { t } = useTranslation();
 
-  // 新增：从 R2 异步获取的详情与剧集状态
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -48,49 +47,49 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const selectedEpisode = episodes[selectedIndex];
 
-  // 1. 从 Cloudflare R2 拉取完整 JSON 详情（含播放列表）
+  // 1. 从 Cloudflare R2 拉取完整 JSON 详情
   useEffect(() => {
-  const id = anime.external_id || anime.id;
-  if (!id) return;
+    const id = anime.external_id || anime.id;
+    if (!id) return;
 
-  let isMounted = true;
+    let isMounted = true;
 
-  // 将同步更新放入微任务队列，避开 react-hooks/set-state-in-effect 规则拦截
-  queueMicrotask(() => {
-    if (isMounted) {
-      setLoadingDetail(true);
-      setDetailError(null);
-    }
-  });
-
-  const r2PublicUrl = (import.meta.env.VITE_R2_PUBLIC_URL || "").replace(/\/+$/, "");
-
-  fetch(`${r2PublicUrl}/anime-details/${id}.json`)
-    .then((res) => {
-      if (!res.ok) throw new Error("Failed to fetch anime details from R2");
-      return res.json() as Promise<AnimeDetailResponse>;
-    })
-    .then((data) => {
-      if (!isMounted) return;
-      const safeEpisodes = (data.episodes || [])
-        .map((item) => ({ ...item, url: secureStreamUrl(item.url) }))
-        .filter((item): item is Episode => item.url !== null);
-
-      setEpisodes(safeEpisodes);
-    })
-    .catch((err) => {
-      if (!isMounted) return;
-      console.error("Fetch R2 anime detail error:", err);
-      setDetailError("anime.player.loadFailed");
-    })
-    .finally(() => {
-      if (isMounted) setLoadingDetail(false);
+    queueMicrotask(() => {
+      if (isMounted) {
+        setLoadingDetail(true);
+        setDetailError(null);
+        setSelectedIndex(0); // 重置剧集选中索引
+      }
     });
 
-  return () => {
-    isMounted = false;
-  };
-}, [anime.external_id, anime.id]);
+    const r2PublicUrl = (import.meta.env.VITE_R2_PUBLIC_URL || "").replace(/\/+$/, "");
+
+    fetch(`${r2PublicUrl}/anime-details/${id}.json`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch anime details from R2");
+        return res.json() as Promise<AnimeDetailResponse>;
+      })
+      .then((data) => {
+        if (!isMounted) return;
+        const safeEpisodes = (data.episodes || [])
+          .map((item) => ({ ...item, url: secureStreamUrl(item.url) }))
+          .filter((item): item is Episode => item.url !== null);
+
+        setEpisodes(safeEpisodes);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.error("Fetch R2 anime detail error:", err);
+        setDetailError("anime.player.loadFailed");
+      })
+      .finally(() => {
+        if (isMounted) setLoadingDetail(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [anime.external_id, anime.id]);
 
   // 2. 键盘 Esc 关闭与页面 Scroll 锁定
   useEffect(() => {
@@ -106,63 +105,78 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
     };
   }, [onClose]);
 
-  // 3. HLS.js 播放控制逻辑
+  // 3. HLS 播放控制逻辑 (解决竞态销毁与 Safari 自动播放问题)
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !selectedEpisode) return;
-    let cancelled = false;
-    let hls: Hls | null = null;
+
+    let isMounted = true;
+    let hlsInstance: Hls | null = null;
+
     queueMicrotask(() => {
-      if (!cancelled) {
+      if (isMounted) {
         setPlayerError(null);
         setPlayerLoading(true);
       }
     });
 
+    // iOS / Safari 原生 HLS 支持
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = selectedEpisode.url;
       video.load();
+      void video.play().catch(() => undefined);
       return () => {
-        cancelled = true;
+        isMounted = false;
         video.removeAttribute("src");
         video.load();
       };
     }
 
+    // Chrome / Firefox 等其它浏览器使用 HLS.js
     void import("hls.js")
       .then(({ default: HlsPlayer }) => {
-        if (cancelled) return;
+        if (!isMounted) return;
+
         if (!HlsPlayer.isSupported()) {
           setPlayerError("anime.player.unsupported");
           setPlayerLoading(false);
           return;
         }
-        hls = new HlsPlayer({ enableWorker: true });
-        hls.loadSource(selectedEpisode.url);
-        hls.attachMedia(video);
-        hls.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
+
+        hlsInstance = new HlsPlayer({ enableWorker: true });
+        hlsInstance.loadSource(selectedEpisode.url);
+        hlsInstance.attachMedia(video);
+
+        hlsInstance.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
+          if (!isMounted) return;
           setPlayerLoading(false);
           void video.play().catch(() => undefined);
         });
-        hls.on(HlsPlayer.Events.ERROR, (_event, data) => {
-          if (!data.fatal || !hls) return;
-          if (data.type === HlsPlayer.ErrorTypes.NETWORK_ERROR) hls.startLoad();
-          else if (data.type === HlsPlayer.ErrorTypes.MEDIA_ERROR)
-            hls.recoverMediaError();
-          else setPlayerError("anime.player.unavailable");
-          setPlayerLoading(false);
+
+        hlsInstance.on(HlsPlayer.Events.ERROR, (_event, data) => {
+          if (!data.fatal || !hlsInstance || !isMounted) return;
+          if (data.type === HlsPlayer.ErrorTypes.NETWORK_ERROR) {
+            hlsInstance.startLoad();
+          } else if (data.type === HlsPlayer.ErrorTypes.MEDIA_ERROR) {
+            hlsInstance.recoverMediaError();
+          } else {
+            setPlayerError("anime.player.unavailable");
+            setPlayerLoading(false);
+          }
         });
       })
       .catch(() => {
-        if (!cancelled) {
+        if (isMounted) {
           setPlayerError("anime.player.playerLoadFailed");
           setPlayerLoading(false);
         }
       });
 
     return () => {
-      cancelled = true;
-      hls?.destroy();
+      isMounted = false;
+      if (hlsInstance) {
+        hlsInstance.destroy();
+      }
       video.removeAttribute("src");
       video.load();
     };
@@ -254,7 +268,9 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
             </div>
             <div className="flex max-h-52 gap-2 overflow-auto p-3 lg:max-h-[520px] lg:flex-col">
               {loadingDetail ? (
-                <div className="p-3 text-xs text-slate-500">加载剧集中...</div>
+                <div className="p-3 text-xs text-slate-500">
+                  {t("anime.player.loading")}
+                </div>
               ) : (
                 episodes.map((episode, index) => (
                   <button

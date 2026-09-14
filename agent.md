@@ -102,7 +102,7 @@
 
 ### E. Anime Stream
 
-- `src/pages/AnimePage.tsx` 提供独立的暗色 AniStream 媒体浏览页，通过 Sidebar 的 `Anime Stream` 页签进入；标题搜索及资源类型、地区、题材、状态、年份组合筛选均在 Supabase 服务端执行，按 `updated_at DESC` 每页读取 24 条并以 Load More 追加，使用 exact count 判断剩余页。页面包含 300ms 搜索防抖、过期请求防覆盖、可折叠筛选栏、Loading Skeleton、错误重试、组合筛选空状态、动态媒体角标与响应式 2–8 列封面网格，不使用 Featured Hero。
+- `src/pages/AnimePage.tsx` 提供独立的暗色 AniStream 媒体浏览页，通过 Sidebar 的 `Anime Stream` 页签进入；标题搜索及资源类型、地区、题材、状态、年份组合筛选均在 Supabase 服务端执行。TYPE 按 `region_category` 模糊匹配（电影 `%片%`、剧集 `%剧%`、动漫 `%动漫%`、纪录片为 `%记录片%` 或 `%综艺%`），REGION 查询 `area`，YEAR 查询 `year`。列表按 `updated_at DESC` 每页读取 24 条并以 Load More 追加，使用 exact count 判断剩余页。页面包含 300ms 搜索防抖、过期请求防覆盖、可折叠筛选栏、Loading Skeleton、错误重试、组合筛选空状态、动态媒体角标与响应式 2–8 列封面网格，不使用 Featured Hero。
 - `src/components/AnimePlayerModal.tsx` 使用 Safari 原生 HLS 或按需动态加载的 `hls.js` 播放 HTTPS `.m3u8`，支持切集、Escape / 遮罩 / 按钮关闭及 fatal network/media 恢复。
 - Featured `Void Empress` 横幅为项目内原创图片资源 `public/anime/void-empress-hero.png`；卡片封面使用远程图片 URL。
 - `scripts/sync-maccms-anime.ts` 使用仅服务端可用的 `SUPABASE_SERVICE_ROLE_KEY` 和浏览器 User-Agent 分页读取可配置的 MacCMS v10 API，将 HTTPS `.m3u8` 剧集数据按 `external_id` 逐页批量 upsert 到 `public.animes`；MacCMS `type_name` 会去重追加到 `genres`。支持 `--all` 自动读取 `pagecount/total`、逗号分隔或重复的 `--type`、`--delay MS` 节流，以及固定范围的 `--start-page/--pages`；当 `--all` source 为 `t=4` 时自动遍历 4/29/30/31/32/33 六类动漫。

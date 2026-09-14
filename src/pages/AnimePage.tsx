@@ -16,8 +16,7 @@ const filterOptions = {
 type FilterKey = keyof typeof filterOptions;
 type Filters = { [K in FilterKey]: (typeof filterOptions)[K][number] };
 const defaultFilters: Filters = { type: "all", region: "all", genre: "all", status: "all", year: "all" };
-const genreAliases: Record<Exclude<FilterKey, "year">, Record<string, string[]>> = {
-  type: { anime: ["动漫", "动漫片", "动画", "动画片", "Anime", "日本动漫", "日韩动漫", "国产动漫", "欧美动漫", "港台动漫"], movie: ["电影", "电影片", "Movies", "Movie"], series: ["电视剧", "连续剧", "剧集", "TV Series"], documentary: ["纪录片", "记录片", "Documentaries", "Documentary"] },
+const genreAliases: Record<Exclude<FilterKey, "type" | "year">, Record<string, string[]>> = {
   region: { japan: ["日本"], china: ["中国", "大陆", "中国大陆", "国产"], western: ["欧美", "美国", "英国", "法国", "德国", "加拿大", "西班牙", "意大利", "澳大利亚"], korea: ["韩国"], hongKongTaiwan: ["港台", "香港", "台湾", "中国香港", "中国台湾"], other: ["其他", "其它"] },
   genre: { hotBlooded: ["热血"], fantasy: ["奇幻", "Fantasy"], sciFi: ["科幻"], mystery: ["悬疑", "推理"], romance: ["恋爱", "爱情"], comedy: ["搞笑", "喜剧"], school: ["校园"], healing: ["治愈"], action: ["动作", "Action"] },
   status: { ongoing: ["连载", "连载中", "更新中", "Ongoing"], completed: ["完结", "已完结", "Completed"] },
@@ -119,7 +118,12 @@ export function AnimePage() {
       )
       .order("updated_at", { ascending: false });
     if (searchQuery) request = request.ilike("title", `%${searchQuery}%`);
-    if (filters.type !== "all") request = request.in("region_category", genreAliases.type[filters.type]);
+    if (filters.type === "movie") request = request.like("region_category", "%片%");
+    else if (filters.type === "series") request = request.like("region_category", "%剧%");
+    else if (filters.type === "anime") request = request.like("region_category", "%动漫%");
+    else if (filters.type === "documentary") {
+      request = request.or("region_category.like.%记录片%,region_category.like.%综艺%");
+    }
     if (filters.region !== "all") request = request.in("area", genreAliases.region[filters.region]);
     if (filters.genre !== "all") request = request.overlaps("genres", genreAliases.genre[filters.genre]);
     if (filters.status !== "all") request = request.eq("status", filters.status);
