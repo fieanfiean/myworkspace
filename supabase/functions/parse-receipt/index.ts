@@ -10,7 +10,7 @@ const corsHeaders = {
 };
 
 const MODEL_NAME = 'gemini-3.7-flash';
-const FALLBACK_MODEL_NAME = 'gemini-2.0-flash';
+const FALLBACK_MODEL_NAME = 'gemini-3.6-flash';
 
 const allowedCategories = [
   'Groceries',
