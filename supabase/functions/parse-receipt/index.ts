@@ -89,7 +89,7 @@ async function fetchGeminiWithRetry(url: string, requestBody: string, maxRetries
 
     console.warn(`Gemini API returned ${response.status}. Retry attempt ${attempt + 1}/${maxRetries}...`);
     await response.body?.cancel();
-    await new Promise<void>(resolve => setTimeout(resolve, 1_000));
+    await new Promise<void>(resolve => setTimeout(resolve, (attempt + 1) * 1_500));
   }
 
   throw new Error('Gemini API request failed after retries.');
@@ -274,9 +274,15 @@ async function callGemini(apiKey: string, image: { data: string; mimeType: strin
     const responseText = await geminiRes.text();
 
     if (!geminiRes.ok) {
+      if (modelName === MODEL_NAME) {
+        console.warn(
+          `Primary Gemini model ${MODEL_NAME} failed with status ${geminiRes.status}; falling back to ${FALLBACK_MODEL_NAME}.`,
+        );
+        continue;
+      }
+
       console.error(`Gemini Error [${geminiRes.status}]:`, responseText);
       console.error(`Payload Info: mimeType=${mimeType}, base64Length=${cleanBase64.length}`);
-      if (geminiRes.status === 404 && modelName === MODEL_NAME) continue;
 
       let userMessage = `Gemini API returned ${geminiRes.status}`;
       if (geminiRes.status === 429) userMessage = 'AI recognition rate limit reached. Please wait 5–10 seconds and try again.';
