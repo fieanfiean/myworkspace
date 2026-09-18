@@ -21,6 +21,7 @@ interface AnimeRow {
   source_site: string; updated_at: string; release_date: string;
 }
 type AnimeDbRow = Omit<AnimeRow, 'episodes'> & { episode_count: number };
+interface UpsertResult { written: number; inserted: number; updated: number }
 interface SyncOptions { source: string; startPage: number; pages: number; batchSize: number; all: boolean; delayMs: number; typeIds: Array<string | undefined> }
 
 const DEFAULT_SOURCE = 'https://ffzy5.tv/api.php/provide/vod/?ac=detail';
@@ -178,12 +179,32 @@ function apiCount(value: number | string | undefined, fallback: number): number 
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function safeUpsert(supabase: SupabaseClient, dbBatch: AnimeDbRow[], retries = 3): Promise<boolean> {
+async function safeUpsert(supabase: SupabaseClient, dbBatch: AnimeDbRow[], retries = 3): Promise<UpsertResult | null> {
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
-      const { error } = await supabase.from('animes').upsert(dbBatch, { onConflict: 'external_id' });
-      if (!error) return true;
-      console.warn(`[Supabase Warning] 写入失败 (第 ${attempt}/${retries} 次): ${error.message}`);
+      const externalIds = dbBatch.map(item => item.external_id);
+      const { data: existingRows, error: lookupError } = await supabase
+        .from('animes')
+        .select('external_id')
+        .in('external_id', externalIds);
+      if (lookupError) throw new Error(`Pre-upsert lookup failed: ${lookupError.message}`);
+
+      const existingIds = new Set((existingRows ?? []).map(row => String(row.external_id)));
+      const { data, error } = await supabase
+        .from('animes')
+        .upsert(dbBatch, { onConflict: 'external_id' })
+        .select('external_id');
+      if (error) {
+        const diagnostics = [error.code, error.details, error.hint].filter(Boolean).join(' | ');
+        console.warn(`[Supabase Warning] 写入失败 (第 ${attempt}/${retries} 次): ${error.message}${diagnostics ? ` | ${diagnostics}` : ''}`);
+      } else if (!data || data.length !== dbBatch.length) {
+        console.warn(`[Supabase Warning] 写入校验失败 (第 ${attempt}/${retries} 次): expected ${dbBatch.length} returned rows, received ${data?.length ?? 0}.`);
+      } else {
+        const inserted = externalIds.filter(id => !existingIds.has(id)).length;
+        const result = { written: data.length, inserted, updated: data.length - inserted };
+        console.log(`[Supabase] Verified ${result.written} rows (${result.inserted} inserted, ${result.updated} updated).`);
+        return result;
+      }
     } catch (error: unknown) {
       const detail = error instanceof Error ? ` ${error.message}` : '';
       console.warn(`[Supabase Warning] 发生网络/520网关异常，第 ${attempt}/${retries} 次重试...${detail}`);
@@ -191,7 +212,7 @@ async function safeUpsert(supabase: SupabaseClient, dbBatch: AnimeDbRow[], retri
     if (attempt < retries) await delay(1000 * Math.pow(2, attempt - 1));
   }
   console.error('[Supabase Error] 批次写入彻底失败，跳过该批次。');
-  return false;
+  return null;
 }
 
 async function main(): Promise<void> {
@@ -202,6 +223,10 @@ async function main(): Promise<void> {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl) throw new Error('SUPABASE_URL is required in .env.local or the process environment.');
   if (!serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required in .env.local or the process environment.');
+  const targetRef = supabaseUrl.replace(/^https:\/\//, '').replace(/\.supabase\.co\/?$/, '');
+  console.log(`[Target] URL ref: ${targetRef}`);
+  console.log(`[Target] Service key length: ${serviceRoleKey.length}`);
+  console.log(`[Target] Service key is JWT: ${serviceRoleKey.startsWith('eyJ')}`);
 
   // ================= 1. 读取 R2 环境变量并初始化 S3 客户端 =================
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -220,10 +245,10 @@ async function main(): Promise<void> {
   });
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  console.log(`[Target] Supabase URL: ${supabaseUrl}`);   // ← 加这行
-console.log(`[Target] Service key prefix: ${serviceRoleKey.slice(0, 20)}...`);  // ← 加这行
   const sourceSite = new URL(options.source).origin;
   let imported = 0;
+  let inserted = 0;
+  let updated = 0;
   let skipped = 0;
   const firstPage = options.all ? 1 : options.startPage;
   const discoveries: Array<{ typeId?: string; firstPayload: MacCmsResponse; lastPage: number; remoteTotal: number }> = [];
@@ -282,15 +307,19 @@ console.log(`[Target] Service key prefix: ${serviceRoleKey.slice(0, 20)}...`);  
         });
 
         // 写入 Supabase 数据库
-        const written = await safeUpsert(supabase, dbBatch);
-        if (written) imported += dbBatch.length;
+        const result = await safeUpsert(supabase, dbBatch);
+        if (result) {
+          imported += result.written;
+          inserted += result.inserted;
+          updated += result.updated;
+        }
         else skipped += dbBatch.length;
       }
       console.log(`[Page ${processedPages}/${totalPages}] Processed ${validRows.length} items (R2 JSON + Supabase Index). Cumulative total: ${imported} / ${remoteTotal}. Skipped: ${rows.length - validRows.length}.`);
       await delay(300);
     }
   }
-  console.log(`Anime sync complete: ${imported} upserted, ${skipped} skipped.`);
+  console.log(`Anime sync complete: ${imported} verified (${inserted} inserted, ${updated} updated), ${skipped} skipped.`);
 }
 
 main().catch(error => {

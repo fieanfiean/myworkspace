@@ -33,10 +33,28 @@ jobs:
       - name: Debug target
         run: |
           echo "SUPABASE_URL ref: $(echo $SUPABASE_URL | sed 's|https://||;s|\.supabase\.co||')"
-          echo "R2_BUCKET_NAME: $R2_BUCKET_NAME"
+          echo "SERVICE_ROLE_KEY length: ${#SUPABASE_SERVICE_ROLE_KEY}"
+          if [[ "$SUPABASE_SERVICE_ROLE_KEY" == eyJ* ]]; then echo "SERVICE_ROLE_KEY is JWT: true"; else echo "SERVICE_ROLE_KEY is JWT: false"; fi
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Verify Supabase write
+        run: |
+          response=$(curl -sS --fail-with-body -X POST "$SUPABASE_URL/rest/v1/animes?on_conflict=external_id&select=external_id,title" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates,return=representation" \
+            -d '{"external_id":"debug-actions-001","title":"Debug Actions","episode_count":1,"status":"ongoing","updated_at":"2026-09-19T00:00:00Z","release_date":"2026-09-19T00:00:00Z"}' \
+            -w $'\nHTTP: %{http_code}')
+          echo "$response"
+          curl -sS --fail-with-body "$SUPABASE_URL/rest/v1/animes?external_id=eq.debug-actions-001&select=external_id,title" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Sync latest anime pages
         run: npm run sync:anime -- --pages 3 --source "https://ffzy5.tv/api.php/provide/vod/?ac=detail&t=4"
