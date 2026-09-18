@@ -9,8 +9,8 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const MODEL_NAME = 'gemini-3.7-flash';
-const FALLBACK_MODEL_NAME = 'gemini-3.6-flash';
+const MODEL_NAME = 'gemini-3.5-flash-lite';
+const FALLBACK_MODEL_NAME = 'gemini-3.1-flash-lite';
 
 const allowedCategories = [
   'Groceries',
@@ -76,20 +76,38 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 async function fetchGeminiWithRetry(url: string, requestBody: string, maxRetries = 2): Promise<Response> {
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    const response = await fetch(url, {
-      method: 'POST',
-      // Gemini API keys belong only in the URL query string. Do not add an
-      // Authorization header here; that header expects an OAuth 2 access token.
-      headers: { 'Content-Type': 'application/json' },
-      body: requestBody,
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        // Gemini API keys belong only in the URL query string. Do not add an
+        // Authorization header here; that header expects an OAuth 2 access token.
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody,
+        signal: AbortSignal.timeout(25_000),
+      });
+    } catch (error) {
+      const isTimeout = error instanceof Error
+        && (error.name === 'AbortError' || error.name === 'TimeoutError');
+      if (!isTimeout) throw error;
+
+      console.warn(`Gemini API request timed out. Attempt ${attempt + 1}/${maxRetries + 1}.`);
+      if (attempt >= maxRetries) {
+        return new Response(JSON.stringify({ error: 'Gemini API request timed out after retries.' }), {
+          status: 504,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      await new Promise<void>(resolve => setTimeout(resolve, 1_000));
+      continue;
+    }
 
     if (response.ok || (response.status !== 503 && response.status !== 429)) return response;
     if (attempt >= maxRetries) return response;
 
     console.warn(`Gemini API returned ${response.status}. Retry attempt ${attempt + 1}/${maxRetries}...`);
     await response.body?.cancel();
-    await new Promise<void>(resolve => setTimeout(resolve, (attempt + 1) * 1_500));
+    await new Promise<void>(resolve => setTimeout(resolve, 1_000));
   }
 
   throw new Error('Gemini API request failed after retries.');
@@ -209,9 +227,13 @@ function parseReceipt(value: unknown): ReceiptResult {
     throw new RequestError('Gemini returned an invalid receipt object.', 502);
   }
   const record = value as Record<string, unknown>;
-  const amount = typeof record.amount === 'number' ? record.amount : Number(record.amount);
+  const rawAmount = typeof record.amount === 'number' ? record.amount : Number(record.amount);
+  const amount = Math.abs(rawAmount);
   const date = typeof record.date === 'string' ? record.date : '';
-  const transactionTime = typeof record.transaction_time === 'string' ? record.transaction_time : '';
+  let transactionTime = typeof record.transaction_time === 'string' ? record.transaction_time.trim() : '';
+  if (/^\d{2}:\d{2}:\d{2}$/.test(transactionTime)) {
+    transactionTime = transactionTime.slice(0, 5);
+  }
   const description = typeof record.description === 'string' ? record.description.trim() : '';
   const type = record.type;
   const category = record.suggested_category;
@@ -248,7 +270,16 @@ function parseReceiptBatch(value: unknown): ReceiptBatchResult {
   if (transactions.length > 100) {
     throw new RequestError('Gemini returned too many transactions.', 502);
   }
-  return { transactions: transactions.map(parseReceipt) };
+
+  const parsedTransactions = transactions.map(parseReceipt);
+
+  parsedTransactions.sort((a, b) => {
+    if (a.date !== b.date) {
+      return b.date.localeCompare(a.date);
+    }
+    return b.transaction_time.localeCompare(a.transaction_time); 
+  });
+  return { transactions: parsedTransactions };
 }
 
 async function callGemini(apiKey: string, image: { data: string; mimeType: string }): Promise<ReceiptBatchResult> {
@@ -264,6 +295,7 @@ async function callGemini(apiKey: string, image: { data: string; mimeType: strin
       generationConfig: {
         temperature: 0,
         responseMimeType: 'application/json',
+        thinkingConfig: { thinkingBudget: 0 },
       },
     };
   const requestBody = JSON.stringify(geminiPayload);

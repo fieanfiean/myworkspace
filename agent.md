@@ -32,6 +32,8 @@
 
 ## 3. 构建与部署
 
+- Authenticated profile, budget, and anime pages are loaded with `React.lazy` and `Suspense`. Vite isolates React, UI, chart, PDF, and Supabase dependencies into named chunks, while PDF generation dynamically imports the modular `html2pdf.js` source only when exporting.
+
 - 本地验证：`npm run lint` 和 `npm run build`。
 - 本地开发：默认仅使用 `npm run dev` 进行本地预览与热更新测试。
 - Staging 部署命令：`npm run deploy:staging`（内部执行 `npm run build:staging` + `npx netlify deploy --alias staging --dir dist --no-build`）。
@@ -72,6 +74,9 @@
 
 ### B. Budget Tracker
 
+- The dashboard's primary summary section contains filtered total income, total expense, net balance, and top expense categories. Its shared date filter defaults to the current month, and the summary and transaction list update together when filters change.
+- The Income vs Expenses chart uses independent rolling windows of 30 days, 18 weeks, or 12 months. It pins the Y-axis, opens at the newest period, and progressively prepends older client-loaded history when scrolled to the left while preserving the viewport.
+
 - 核心表：`public.transactions`，字段包含 `profile_id`、`type`、MYR 基准 `amount`、描述、日期、可选 `transaction_time`、分类及原币信息。
 - 类别：Salary、Groceries、Food、Transport、Utilities、Entertainment、Freelance、Healthcare、Other。
 - 支持新增、编辑、删除和 Supabase Realtime 多端同步；编辑/删除均按 `id + profile_id` 限定。
@@ -102,6 +107,15 @@
 
 ### E. Anime Stream
 
+- Anime player episodes are grouped into horizontally scrollable 25-episode range tabs; the active range and playing episode are highlighted, and the mobile episode grid uses native momentum vertical scrolling with four to five columns.
+
+### F. Stock Analysis
+
+- `src/pages/StockAnalysisPage.tsx` is a lazy-loaded responsive dark stock dashboard backed by mock data in `src/data/stockMockData.ts`. Reusable components under `src/components/Stock/` provide ticker search/status, stock summary metrics, candlestick and volume views, AI insights, quarterly grouped bars, and a scrollable watchlist with sparklines.
+- Interactive stock snapshots live in `src/data/mockData.ts`. `StockAnalysisPage` owns the selected ticker, and quick tags, valid ticker search submissions, and watchlist rows update the summary banner plus candlestick/volume history with an active-selection treatment.
+- `services/stock-api` is an independent FastAPI + yfinance service. It exposes health, combined dashboard, quote, OHLCV history, and key-statistics endpoints under `/api/stocks/{ticker}`; requests validate ticker/period/interval inputs, cache upstream responses briefly, return consistent JSON errors, and allow configurable CORS origins. Yahoo Finance data is treated as potentially delayed market data rather than an exchange-grade real-time feed.
+- Budget Tracker, Anime Stream, and Stock Analysis share the `dashboard-light-page` light-theme treatment: `#F8FAFC` page backgrounds, white cards, slate-200 borders, subtle shadows, slate-900 primary text, slate-500 secondary text, and light chart grids/tooltips. Explicit `dark:` styles preserve their original dark presentation.
+
 - `src/pages/AnimePage.tsx` 提供独立的暗色 AniStream 媒体浏览页，通过 Sidebar 的 `Anime Stream` 页签进入；标题搜索及资源类型、地区、题材、状态、年份组合筛选均在 Supabase 服务端执行。TYPE 按 `region_category` 模糊匹配（电影 `%片%`、剧集 `%剧%`、动漫 `%动漫%`、纪录片为 `%记录片%` 或 `%综艺%`），REGION 查询 `area`，YEAR 查询 `year`。列表按 `updated_at DESC` 每页读取 24 条并以 Load More 追加，使用 exact count 判断剩余页。页面包含 300ms 搜索防抖、过期请求防覆盖、可折叠筛选栏、Loading Skeleton、错误重试、组合筛选空状态、动态媒体角标与响应式 2–8 列封面网格，不使用 Featured Hero。
 - `src/components/AnimePlayerModal.tsx` 使用 Safari 原生 HLS 或按需动态加载的 `hls.js` 播放 HTTPS `.m3u8`，支持切集、Escape / 遮罩 / 按钮关闭及 fatal network/media 恢复。
 - Featured `Void Empress` 横幅为项目内原创图片资源 `public/anime/void-empress-hero.png`；卡片封面使用远程图片 URL。
@@ -131,6 +145,7 @@
 
 - Deployments must use local CLI-built static assets to preserve zero Netlify Build Minutes consumption. Never rely on Netlify Git-triggered continuous deployment.
 - Never modify Netlify cloud build settings through `netlify.toml` or project configuration.
+- Receipt OCR Gemini calls use a 25-second request timeout, convert abort/timeout exceptions into retryable or fallback-compatible responses, disable model thinking with a zero thinking budget, and use a fixed 1-second delay between retries.
 - 日常开发或修改代码后，默认仅使用 `npm run dev` 进行本地热更新测试；不要主动建议或执行任何部署。
 - 只有用户明确要求“部署到 staging”，或功能必须通过真实线上域名验证（例如 PWA Service Worker、跨域回调）时，才使用 `npm run deploy:staging`。该命令执行 `npm run build:staging`，随后运行 `netlify deploy --alias staging --dir dist --no-build`。
 - 只有用户明确要求“上线”或“部署到 prod”时，才允许使用 `npm run deploy:prod`。该命令执行 `npm run build:prod`，随后运行 `netlify deploy --prod --dir dist --no-build`。

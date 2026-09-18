@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type Hls from "hls.js";
 import { ListVideo, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -21,6 +21,8 @@ interface AnimeDetailResponse {
   episodes: Episode[];
 }
 
+const EPISODES_PER_RANGE = 25;
+
 function secureStreamUrl(value: string): string | null {
   const upgraded = value.trim().replace(/^http:\/\//i, "https://");
   try {
@@ -42,10 +44,18 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedRange, setSelectedRange] = useState(0);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerLoading, setPlayerLoading] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const rangeTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedEpisode = episodes[selectedIndex];
+  const episodeRanges = useMemo(() => Array.from(
+    { length: Math.ceil(episodes.length / EPISODES_PER_RANGE) },
+    (_, index) => ({ start: index * EPISODES_PER_RANGE, end: Math.min((index + 1) * EPISODES_PER_RANGE, episodes.length) }),
+  ), [episodes.length]);
+  const visibleRange = episodeRanges[selectedRange];
+  const visibleEpisodes = visibleRange ? episodes.slice(visibleRange.start, visibleRange.end) : [];
 
   // 1. 从 Cloudflare R2 拉取完整 JSON 详情
   useEffect(() => {
@@ -59,6 +69,7 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
         setLoadingDetail(true);
         setDetailError(null);
         setSelectedIndex(0); // 重置剧集选中索引
+        setSelectedRange(0);
       }
     });
 
@@ -90,6 +101,14 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
       isMounted = false;
     };
   }, [anime.external_id, anime.id]);
+
+  useEffect(() => {
+    rangeTabRefs.current[selectedRange]?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [selectedRange]);
 
   // 2. 键盘 Esc 关闭与页面 Scroll 锁定
   useEffect(() => {
@@ -258,37 +277,54 @@ export function AnimePlayerModal({ anime, onClose }: Props) {
           </div>
 
           {/* 右侧选集列表 */}
-          <aside className="min-h-0 border-t border-slate-800 bg-[#101522] lg:border-l lg:border-t-0">
-            <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+          <aside className="flex min-h-0 flex-col border-t border-slate-800 bg-[#101522] lg:border-l lg:border-t-0">
+            <div className="flex shrink-0 items-center gap-2 border-b border-slate-800 px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-400">
               <ListVideo size={16} />
               {t("anime.player.selectEpisode")}
               <span className="ml-auto text-slate-600">
                 {t("anime.player.episodeCount", { count: episodes.length })}
               </span>
             </div>
-            <div className="flex max-h-52 gap-2 overflow-auto p-3 lg:max-h-[520px] lg:flex-col">
-              {loadingDetail ? (
-                <div className="p-3 text-xs text-slate-500">
-                  {t("anime.player.loading")}
-                </div>
-              ) : (
-                episodes.map((episode, index) => (
+            {!loadingDetail && episodeRanges.length > 0 && <div
+              className="scrollbar-none flex shrink-0 touch-pan-x gap-2 overflow-x-auto overscroll-x-contain border-b border-slate-800/80 p-3"
+              style={{ WebkitOverflowScrolling: "touch" }}
+              aria-label={t("anime.player.selectEpisode")}
+            >
+              {episodeRanges.map((range, index) => <button
+                key={`${range.start}-${range.end}`}
+                ref={element => { rangeTabRefs.current[index] = element; }}
+                type="button"
+                onClick={() => setSelectedRange(index)}
+                aria-pressed={selectedRange === index}
+                className={`min-h-11 shrink-0 rounded-lg px-4 text-sm font-semibold transition ${selectedRange === index ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/40" : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white"}`}
+              >
+                {range.start + 1}-{range.end}
+              </button>)}
+            </div>}
+            <div
+              className="grid max-h-52 min-h-0 touch-pan-y grid-cols-4 gap-2 overflow-y-auto overscroll-y-contain p-3 sm:grid-cols-5 lg:max-h-[430px] lg:flex-1 lg:grid-cols-2 lg:content-start"
+              style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+            >
+              {loadingDetail ? <div className="col-span-full p-3 text-xs text-slate-500">{t("anime.player.loading")}</div> : visibleEpisodes.map((episode, offset) => {
+                const index = (visibleRange?.start ?? 0) + offset;
+                return (
                   <button
                     key={`${episode.ep}-${episode.url}`}
                     type="button"
                     onClick={() => setSelectedIndex(index)}
-                    className={`min-h-11 shrink-0 rounded-lg px-3 py-2 text-left text-sm transition ${
+                    aria-current={selectedIndex === index ? "true" : undefined}
+                    className={`min-h-11 min-w-0 rounded-lg px-2 py-2 text-center text-sm transition ${
                       selectedIndex === index
                         ? "bg-indigo-600 font-semibold text-white"
                         : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white"
                     }`}
                   >
-                    <span className="block max-w-40 truncate lg:max-w-none">
+                    <span className="block truncate">
                       {episode.ep}
                     </span>
                   </button>
-                ))
-              )}
+                );
+              })}
             </div>
           </aside>
         </div>

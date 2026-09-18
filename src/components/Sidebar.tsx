@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronUp, Clapperboard, LoaderCircle, LogOut, PanelLeftClose, PanelLeftOpen, User, Wallet, X } from 'lucide-react';
+import { BarChart3, ChevronUp, Clapperboard, LayoutDashboard, LoaderCircle, LogOut, PanelLeftClose, PanelLeftOpen, User, Wallet, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from './EditProfileModal';
 
-export type Tab = 'profile' | 'budget' | 'anime';
+export type Tab = 'dashboard' | 'profile' | 'budget' | 'anime' | 'stocks';
 
 interface SidebarProps {
   activeTab: Tab;
@@ -98,9 +98,11 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
         </div>
 
         <nav className="flex flex-col gap-2" aria-label={t('sidebar.navigation')}>
+          <NavItem active={activeTab === 'dashboard'} collapsed={isCollapsed} icon={LayoutDashboard} label={t('sidebar.dashboard')} onClick={() => selectTab('dashboard')} />
           <NavItem active={activeTab === 'profile'} collapsed={isCollapsed} icon={User} label={t('sidebar.profile')} onClick={() => selectTab('profile')} />
           <NavItem active={activeTab === 'budget'} collapsed={isCollapsed} icon={Wallet} label={t('sidebar.budget')} onClick={() => selectTab('budget')} />
           <NavItem active={activeTab === 'anime'} collapsed={isCollapsed} icon={Clapperboard} label={t('sidebar.anime')} onClick={() => selectTab('anime')} />
+          <NavItem active={activeTab === 'stocks'} collapsed={isCollapsed} icon={BarChart3} label={t('sidebar.stocks')} onClick={() => selectTab('stocks')} />
         </nav>
       </div>
 

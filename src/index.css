@@ -12,9 +12,21 @@ body {
   transition: background-color 300ms ease, color 300ms ease;
 }
 
+:root {
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: #e2e8f0;
+  --chart-tooltip-text: #0f172a;
+}
+
 .dark body {
   background-color: #0b0f17;
   color: #f8fafc;
+}
+
+.dark {
+  --chart-tooltip-bg: #0f172a;
+  --chart-tooltip-border: #334155;
+  --chart-tooltip-text: #f8fafc;
 }
 
 .scrollbar-none {
@@ -160,7 +172,9 @@ html:not(.dark) .bg-slate-900 { background-color: #ffffff; }
 html:not(.dark) .bg-slate-800 { background-color: #f1f5f9; }
 html:not(.dark) .bg-slate-700 { background-color: #e2e8f0; }
 html:not(.dark) .bg-slate-900\/80,
-html:not(.dark) .bg-slate-900\/90 { background-color: rgba(255, 255, 255, 0.96); }
+html:not(.dark) .bg-slate-900\/90,
+html:not(.dark) .bg-slate-900\/95 { background-color: rgba(255, 255, 255, 0.96); }
+html:not(.dark) .bg-slate-950\/35,
 html:not(.dark) .bg-slate-950\/40,
 html:not(.dark) .bg-slate-950\/50,
 html:not(.dark) .bg-slate-950\/60,
@@ -177,6 +191,49 @@ html:not(.dark) .text-slate-400 { color: #475569; }
 html:not(.dark) .text-slate-500 { color: #64748b; }
 html:not(.dark) :is(.bg-blue-600,.bg-indigo-600,.bg-red-600,.bg-rose-800,.bg-emerald-700,.btn-primary-lg),
 html:not(.dark) :is(.bg-blue-600,.bg-indigo-600,.bg-red-600,.bg-rose-800,.bg-emerald-700,.btn-primary-lg) * { color: #ffffff; }
+
+/* Bright dashboard surfaces shared by Budget, Anime, and Stock Analysis. */
+html:not(.dark) .dashboard-light-page {
+  color: #0f172a;
+}
+
+html:not(.dark) .dashboard-light-page :is(
+  [class~="bg-[#111827]"],
+  [class~="bg-[#111827]/90"],
+  [class~="bg-[#111622]"],
+  [class~="bg-[#131825]"]
+) {
+  background-color: #ffffff;
+}
+
+html:not(.dark) .dashboard-light-page [class~="bg-[#0B0F17]"] {
+  background-color: #f8fafc;
+}
+
+html:not(.dark) .dashboard-light-page [class~="bg-[#181F30]"] {
+  background-color: #f1f5f9;
+}
+
+html:not(.dark) .dashboard-light-page [class~="from-[#161F30]"] {
+  background-color: #ffffff;
+  background-image: none;
+}
+
+html:not(.dark) .dashboard-light-page :is(.shadow-xl, .shadow-2xl) {
+  box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06);
+}
+
+html:not(.dark) .dashboard-light-page .budget-chart-grid line,
+html:not(.dark) .dashboard-light-page [stroke="#1e293b"] {
+  stroke: #f1f5f9;
+}
+
+html:not(.dark) .dashboard-light-page .recharts-default-tooltip {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
 
 /* ==================================================
    4. UI 控件 (Tags & Buttons)

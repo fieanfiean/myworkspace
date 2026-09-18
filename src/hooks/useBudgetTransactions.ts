@@ -72,6 +72,7 @@ export function useBudgetTransactions(userId: string | undefined) {
           .select(transactionColumns)
           .eq('profile_id', userId)
           .order('date', { ascending: false })
+          .order('transaction_time', { ascending: false, nullsFirst: false })
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
           .range(from, from + TRANSACTION_BATCH_SIZE - 1);

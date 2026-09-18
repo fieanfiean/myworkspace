@@ -186,7 +186,7 @@ export function AnimePage() {
   };
 
   return (
-    <div className="mx-auto min-h-[calc(100vh-7rem)] max-w-[1600px] rounded-3xl bg-[#0B0E17] p-4 text-slate-100 shadow-2xl shadow-black/20 sm:p-6 lg:p-8">
+    <div className="dashboard-light-page mx-auto min-h-[calc(100vh-7rem)] max-w-[1600px] rounded-3xl bg-slate-50 p-4 text-slate-900 shadow-sm dark:bg-[#0B0E17] dark:text-slate-100 dark:shadow-2xl dark:shadow-black/20 sm:p-6 lg:p-8">
       <header className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-center">
         <div className="flex shrink-0 items-center gap-3">
           <span className="flex size-10 items-center justify-center rounded-xl bg-violet-500/15 text-violet-400 ring-1 ring-violet-400/20">
@@ -214,9 +214,9 @@ export function AnimePage() {
         </label>
       </header>
 
-      <section className="mb-7 overflow-hidden rounded-2xl border border-slate-800 bg-[#111622]" aria-label={t("anime.filters.title")}>
+      <section className="mb-7 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111622] dark:shadow-none" aria-label={t("anime.filters.title")}>
         <button type="button" onClick={() => setFiltersOpen(value => !value)} aria-expanded={filtersOpen} className="flex min-h-12 w-full items-center justify-between gap-3 px-4 text-left text-sm font-semibold text-slate-200 sm:px-5"><span className="flex items-center gap-2"><SlidersHorizontal size={17} className="text-violet-400"/>{t("anime.filters.title")}</span><ChevronDown size={17} className={`transition ${filtersOpen ? "rotate-180" : ""}`}/></button>
-        {filtersOpen && <div className="space-y-4 border-t border-slate-800 p-4 sm:p-5">{(Object.keys(filterOptions) as FilterKey[]).map(key => <div key={key} className="grid gap-2 sm:grid-cols-[6rem_minmax(0,1fr)] sm:items-start"><h2 className="pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">{t(`anime.filters.dimensions.${key}`)}</h2><div className="flex flex-wrap gap-2">{filterOptions[key].map(value => <button key={value} type="button" onClick={() => changeFilter(key, value)} className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition sm:text-sm ${filters[key] === value ? "bg-violet-600 text-white shadow-md shadow-violet-950/40" : "bg-[#181F30] text-slate-400 hover:bg-slate-700 hover:text-white"}`}>{t(`anime.filters.options.${key}.${value}`)}</button>)}</div></div>)}</div>}
+        {filtersOpen && <div className="space-y-4 border-t border-slate-100 p-4 dark:border-slate-800 sm:p-5">{(Object.keys(filterOptions) as FilterKey[]).map(key => <div key={key} className="grid gap-2 sm:grid-cols-[6rem_minmax(0,1fr)] sm:items-start"><h2 className="pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">{t(`anime.filters.dimensions.${key}`)}</h2><div className="flex flex-wrap gap-2">{filterOptions[key].map(value => <button key={value} type="button" onClick={() => changeFilter(key, value)} className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition sm:text-sm ${filters[key] === value ? "bg-violet-600 text-white shadow-sm dark:shadow-md dark:shadow-violet-950/40" : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-[#181F30] dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"}`}>{t(`anime.filters.options.${key}.${value}`)}</button>)}</div></div>)}</div>}
       </section>
 
       {loading ? (
@@ -274,7 +274,7 @@ export function AnimePage() {
                     key={item.id}
                     type="button"
                     onClick={() => setPlaying(item)}
-                    className="group min-w-0 text-left"
+                    className="group min-w-0 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-transparent dark:bg-transparent dark:p-0 dark:shadow-none"
                   >
                     <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-[#181F30] ring-1 ring-white/5">
                       {item.cover_url ? (

@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { Download, FileText, LoaderCircle } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import { useAuth } from '@/hooks/useAuth';
 import { useT } from '@/hooks/useT';
 import { supabase } from '@/lib/supabase';
@@ -98,6 +97,7 @@ export function ExportPanel({ data }: ExportPanelProps) {
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'], avoid: ['section > div'] },
       };
+      const { default: html2pdf } = await import('html2pdf.js/src/index.js');
       await html2pdf().set(pdfOptions as never).from(documentRef.current).save();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to generate the document.');

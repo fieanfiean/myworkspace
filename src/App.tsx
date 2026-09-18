@@ -1,8 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Sidebar } from './components/Sidebar';
-import { AboutMePage } from './pages/AboutMePage';
-import { BudgetPage } from './pages/BudgetPage';
-import { AnimePage } from './pages/AnimePage';
 import { EnvironmentBadge } from './components/EnvironmentBadge';
 import { Header } from './components/Header';
 import { AuthProvider } from './contexts/AuthContext';
@@ -11,11 +9,17 @@ import { LoginPage } from './pages/LoginPage';
 import { ThemeProvider } from './context/ThemeContext';
 import type { Tab } from './components/Sidebar';
 
+const AboutMePage = lazy(() => import('./pages/AboutMePage').then(module => ({ default: module.AboutMePage })));
+const BudgetPage = lazy(() => import('./pages/BudgetPage').then(module => ({ default: module.BudgetPage })));
+const AnimePage = lazy(() => import('./pages/AnimePage').then(module => ({ default: module.AnimePage })));
+const StockAnalysisPage = lazy(() => import('./pages/StockAnalysisPage').then(module => ({ default: module.StockAnalysisPage })));
+
 const EDGE_SWIPE_MIN = 16;
 const EDGE_SWIPE_MAX = 80;
 
 function AuthenticatedApp() {
-  const [activeTab, setActiveTab] = useState<Tab>('profile');
+  const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobileToolsOpen, setIsMobileToolsOpen] = useState(false);
@@ -106,9 +110,12 @@ function AuthenticatedApp() {
 
       <main className={`w-full min-w-0 flex-1 px-4 py-4 transition-[margin] duration-300 ease-in-out sm:px-6 md:p-8 ${isSidebarCollapsed ? 'md:ml-16' : 'md:ml-64'}`}>
         <Header onOpenMenu={() => setIsMobileSidebarOpen(true)} onOpenTools={() => setIsMobileToolsOpen(true)} />
-        {activeTab === 'profile' && <AboutMePage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
-        {activeTab === 'budget' && <BudgetPage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
-        {activeTab === 'anime' && <AnimePage />}
+        <Suspense fallback={<div className="flex min-h-72 items-center justify-center text-sm text-slate-500">{t('common.loadingWorkspace')}</div>}>
+          {(activeTab === 'dashboard' || activeTab === 'profile') && <AboutMePage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
+          {activeTab === 'budget' && <BudgetPage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
+          {activeTab === 'anime' && <AnimePage />}
+          {activeTab === 'stocks' && <StockAnalysisPage />}
+        </Suspense>
       </main>
     </div>
   );
