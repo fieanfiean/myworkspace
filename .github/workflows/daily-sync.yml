@@ -30,6 +30,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Debug target
+        run: |
+          echo "SUPABASE_URL ref: $(echo $SUPABASE_URL | sed 's|https://||;s|\.supabase\.co||')"
+          echo "R2_BUCKET_NAME: $R2_BUCKET_NAME"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+
       - name: Sync latest anime pages
         run: npm run sync:anime -- --pages 3 --source "https://ffzy5.tv/api.php/provide/vod/?ac=detail&t=4"
         env:
