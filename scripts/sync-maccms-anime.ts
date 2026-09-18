@@ -22,10 +22,15 @@ interface AnimeRow {
 }
 type AnimeDbRow = Omit<AnimeRow, 'episodes'> & { episode_count: number };
 interface UpsertResult { written: number; inserted: number; updated: number }
-interface SyncOptions { source: string; startPage: number; pages: number; batchSize: number; all: boolean; delayMs: number; typeIds: Array<string | undefined> }
+interface SyncOptions { source: string; startPage: number; pages: number; pagesProvided: boolean; batchSize: number; all: boolean; delayMs: number; typeIds: Array<string | undefined> }
 
 const DEFAULT_SOURCE = 'https://ffzy5.tv/api.php/provide/vod/?ac=detail';
-const ANIME_TYPE_IDS = ['4', '29', '30', '31', '32', '33'];
+const ALL_TYPE_IDS = [
+  '6', '7', '8', '9', '10', '11', '12', '20', '34',      // 电影
+  '13', '14', '15', '16', '21', '22', '23', '24', '36', // 连续剧
+  '25', '26', '27', '28',                                 // 综艺
+  '29', '30', '31', '32', '33',                           // 动漫
+];
 
 function optionValue(args: string[], name: string): string | undefined {
   const equalsArg = args.find(arg => arg.startsWith(`${name}=`));
@@ -60,11 +65,13 @@ function parseOptions(args: string[]): SyncOptions {
   if (args.includes('--type') && explicitTypeIds.length === 0) throw new Error('--type requires one or more category IDs.');
   const sourceTypeId = new URL(source).searchParams.get('t') ?? undefined;
   const all = args.includes('--all');
-  const typeIds = explicitTypeIds.length > 0 ? explicitTypeIds : all && sourceTypeId === '4' ? ANIME_TYPE_IDS : [sourceTypeId];
+  const pagesValue = optionValue(args, '--pages');
+  const typeIds = explicitTypeIds.length > 0 ? explicitTypeIds : all && sourceTypeId === '4' ? ALL_TYPE_IDS : [sourceTypeId];
   return {
     source,
     startPage: positiveInteger(optionValue(args, '--start-page'), 1, '--start-page'),
-    pages: positiveInteger(optionValue(args, '--pages'), 1, '--pages'),
+    pages: positiveInteger(pagesValue, 1, '--pages'),
+    pagesProvided: pagesValue !== undefined,
     batchSize: positiveInteger(optionValue(args, '--batch-size'), 100, '--batch-size'),
     all,
     delayMs: positiveInteger(optionValue(args, '--delay'), 300, '--delay'),
@@ -260,7 +267,9 @@ async function main(): Promise<void> {
     if (options.all && !hasPageCount) throw new Error(`MacCMS response did not include a valid pagecount required by --all${typeId ? ` for type ${typeId}` : ''}.`);
     const discoveredPageCount = apiCount(firstPayload.pagecount, firstPage);
     const requestedLastPage = options.startPage + options.pages - 1;
-    const lastPage = options.all ? discoveredPageCount : hasPageCount ? Math.min(discoveredPageCount, requestedLastPage) : requestedLastPage;
+    const lastPage = options.all
+      ? options.pagesProvided ? Math.min(discoveredPageCount, options.pages) : discoveredPageCount
+      : hasPageCount ? Math.min(discoveredPageCount, requestedLastPage) : requestedLastPage;
     discoveries.push({ typeId, firstPayload, lastPage, remoteTotal: apiCount(firstPayload.total, (firstPayload.list ?? []).length) });
   }
 
