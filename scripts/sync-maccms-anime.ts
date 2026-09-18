@@ -220,6 +220,8 @@ async function main(): Promise<void> {
   });
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  console.log(`[Target] Supabase URL: ${supabaseUrl}`);   // ← 加这行
+console.log(`[Target] Service key prefix: ${serviceRoleKey.slice(0, 20)}...`);  // ← 加这行
   const sourceSite = new URL(options.source).origin;
   let imported = 0;
   let skipped = 0;
