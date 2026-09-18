@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createSkillCategoryWithSkill, deleteProfileItem, getProfileSectionRows, insertProfileItem, updateProfileItem, type DatabaseRow, type ProfileTable } from '@/services/profileService';
 import type { AboutMeData, Achievement, AchievementCategory, EducationItem, Experience, Skill, SkillCategory, SkillLevel } from '@/types/profile';
 import { parseLegacyDateRange, serializeDateRange } from '@/lib/profileStats';
 
@@ -8,7 +8,7 @@ type NewEducation = Omit<EducationItem, 'id'>;
 type NewAchievement = Omit<Achievement, 'id'>;
 type NewSkill = Omit<Skill, 'id'>;
 type SkillInput = { categoryId: string; item: NewSkill } | { categoryName: string; item: NewSkill };
-type Row = Record<string, unknown>;
+type Row = DatabaseRow;
 const ACHIEVEMENT_IMAGE_COLUMN = 'image_url' as const;
 
 export type ProfileItemSection = 'experiences' | 'educations' | 'skillCategories' | 'achievements';
@@ -81,24 +81,9 @@ function sectionPayload(section: ProfileItemSection, value: Row): Row {
 }
 
 export async function fetchSectionData(profileId = 'default'): Promise<AboutMeData> {
-  const [experiencesResult, educationsResult, categoriesResult, achievementsResult] = await Promise.all([
-    supabase.from('experiences').select('*').eq('profile_id', profileId),
-    supabase.from('educations').select('*').eq('profile_id', profileId),
-    supabase.from('skill_categories').select('*').eq('profile_id', profileId),
-    supabase.from('achievements').select('*').eq('profile_id', profileId),
-  ]);
-
-  const firstError = experiencesResult.error ?? educationsResult.error ?? categoriesResult.error ?? achievementsResult.error;
-  if (firstError) throw firstError;
-
-  const categoryRows = (categoriesResult.data ?? []) as Row[];
-  const categoryIds = categoryRows.map((row) => text(row.id)).filter(Boolean);
-  let skillRows: Row[] = [];
-  if (categoryIds.length) {
-    const { data, error } = await supabase.from('skills').select('*').in('category_id', categoryIds);
-    if (error) throw error;
-    skillRows = (data ?? []) as Row[];
-  }
+  const rows = await getProfileSectionRows(profileId);
+  const categoryRows = rows.categories;
+  const skillRows = rows.skills;
 
   const skillCategories: SkillCategory[] = categoryRows.map((row) => ({
     id: text(row.id),
@@ -108,10 +93,10 @@ export async function fetchSectionData(profileId = 'default'): Promise<AboutMeDa
   }));
 
   return {
-    experiences: ((experiencesResult.data ?? []) as Row[]).map(toExperience),
-    educations: ((educationsResult.data ?? []) as Row[]).map(toEducation),
+    experiences: rows.experiences.map(toExperience),
+    educations: rows.educations.map(toEducation),
     skillCategories,
-    achievements: ((achievementsResult.data ?? []) as Row[]).map(toAchievement),
+    achievements: rows.achievements.map(toAchievement),
   };
 }
 
@@ -138,11 +123,10 @@ export function useProfileData(profileId = 'default', initialData: AboutMeData =
     return () => { active = false; };
   }, [profileId]);
 
-  const runMutation = useCallback(async (operation: () => PromiseLike<{ error: Error | null }>) => {
+  const runMutation = useCallback(async (operation: () => Promise<void>) => {
     setError(null);
     try {
-      const { error: mutationError } = await operation();
-      if (mutationError) throw mutationError;
+      await operation();
       await refresh();
     } catch (reason) {
       const nextError = reason instanceof Error ? reason : new Error(String(reason));
@@ -155,46 +139,32 @@ export function useProfileData(profileId = 'default', initialData: AboutMeData =
     if (section === 'skillCategories') {
       const skillInput = input as SkillInput;
       if ('categoryId' in skillInput) {
-        await runMutation(() => supabase.from('skills').insert({ category_id: skillInput.categoryId, ...sectionPayload(section, skillInput.item as Row) }));
+        await runMutation(() => insertProfileItem('skills', { category_id: skillInput.categoryId, ...sectionPayload(section, skillInput.item as Row) }));
         return;
       }
 
       setError(null);
-      let createdCategoryId: string | null = null;
       try {
-        const { data: category, error: categoryError } = await supabase.from('skill_categories').insert({
-          profile_id: profileId,
-          title: skillInput.categoryName,
-          color: 'bg-blue-600',
-        }).select('id').single();
-        if (categoryError) throw categoryError;
-        createdCategoryId = String(category.id);
-
-        const { error: skillError } = await supabase.from('skills').insert({
-          category_id: createdCategoryId,
-          ...sectionPayload(section, skillInput.item as Row),
-        });
-        if (skillError) throw skillError;
+        await createSkillCategoryWithSkill(profileId, skillInput.categoryName, sectionPayload(section, skillInput.item as Row));
         await refresh();
       } catch (reason) {
-        if (createdCategoryId) await supabase.from('skill_categories').delete().eq('id', createdCategoryId);
         const nextError = reason instanceof Error ? reason : new Error(String(reason));
         setError(nextError);
         throw nextError;
       }
       return;
     }
-    await runMutation(() => supabase.from(section).insert({ profile_id: profileId, ...sectionPayload(section, input as Row) }));
+    await runMutation(() => insertProfileItem(section as ProfileTable, { profile_id: profileId, ...sectionPayload(section, input as Row) }));
   }, [profileId, refresh, runMutation]);
 
   const updateItem = useCallback(async (section: ProfileItemSection, itemId: string, updatedData: ProfileItemUpdate) => {
     const table = section === 'skillCategories' ? 'skills' : section;
-    await runMutation(() => supabase.from(table).update(sectionPayload(section, updatedData as Row)).eq('id', itemId));
+    await runMutation(() => updateProfileItem(table as ProfileTable, itemId, sectionPayload(section, updatedData as Row)));
   }, [runMutation]);
 
   const deleteItem = useCallback(async (section: ProfileItemSection, itemId: string) => {
     const table = section === 'skillCategories' ? 'skills' : section;
-    await runMutation(() => supabase.from(table).delete().eq('id', itemId));
+    await runMutation(() => deleteProfileItem(table as ProfileTable, itemId));
   }, [runMutation]);
 
   return { data, loading, error, fetchSectionData: refresh, addItem, addItemToSection: addItem, updateItem, deleteItem } as const;

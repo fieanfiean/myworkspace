@@ -4,7 +4,19 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 const resources = {
   en: { translation: {
+    brandName: 'Ziwei Enclosure · 紫微垣',
     theme: { switchToLight: 'Switch to light mode', switchToDark: 'Switch to dark mode' },
+    animePlayerShortcuts: 'Space Play/Pause · ←/→ Seek 5s · ↑/↓ Volume · F Fullscreen · N/P Episode',
+    bottomNav: { label: 'Mobile navigation', home: 'Home', stock: 'Stock' },
+    command: { title: 'Command palette', description: 'Search pages and actions', placeholder: 'Search pages or actions…', empty: 'No matching commands.', hint: 'Enter to select · Esc to close', items: { home: 'Go to Home', homeHint: 'Open your dashboard', profile: 'View Profile', profileHint: 'Open profile and resume tools', budget: 'Open Budget', budgetHint: 'View transactions and insights', add: 'Add a transaction', addHint: 'Open the manual transaction form', scan: 'Scan receipt OCR', scanHint: 'Open receipt capture tools', anime: 'Watch Anime', animeHint: 'Browse and continue watching', stocks: 'View Stocks', stocksHint: 'Open stock analysis' } },
+    home: {
+      user: 'there', eyebrow: 'Personal Command Center', welcome: 'Welcome back, {{name}}', subtitle: 'Your money, entertainment, markets, and career highlights—together in one calm workspace.', search: 'to search', view: 'View details',
+      budget: { title: 'Budget Snapshot', subtitle: 'Current month · MYR', income: 'Total income', expense: 'Total expense' },
+      anime: { kicker: 'Continue Watching', resume: 'Resume around minute {{time}}', continue: 'Continue watching', emptyTitle: 'Nothing in progress', empty: 'Start a title and it will appear here automatically.', browse: 'Browse Anime' },
+      stocks: { title: 'Stock Watchlist', subtitle: 'Mock market snapshot' },
+      profile: { kicker: 'Profile Highlight', fallback: 'Build your professional story', noSkills: 'Add skills to your profile to feature them here.', export: 'Export Resume PDF' },
+      quick: { title: 'Quick Actions', ocr: 'Scan receipt OCR', manual: 'Add transaction', anime: 'Continue watching', profile: 'View profile' },
+    },
     sidebar: { workspace: 'Portfolio', navigation: 'Main navigation', dashboard: 'Dashboard', profile: 'Profile', budget: 'Budget Tracker', anime: 'Anime Stream', stocks: 'Stock Analysis', expand: 'Expand sidebar', collapse: 'Collapse sidebar', openMenu: 'Open navigation menu', closeMenu: 'Close navigation menu', openTools: 'Open tools panel', closeTools: 'Close tools panel', switchLanguage: 'Switch language' },
     stock: { portfolio: 'Portfolio Intelligence', title: 'Stock Analysis', lastUpdated: 'Last updated moments ago', search: 'Search stocks', searchPlaceholder: 'Search ticker or company', marketOpen: 'Market Open · NYSE · 2:34 PM ET', equity: 'Common Stock', marketCap: 'Market Cap', peRatio: 'P/E Ratio', volume: 'Volume', weekRange: '52-Week Range', priceAction: 'Price Action', timeframe: 'Chart timeframe', delayedData: 'Market data delayed by 15 minutes', candlestickLabel: 'Apple candlestick price chart', aiInsights: 'AI Insights', aiSubtitle: 'Signals synthesized from market data', sentiment: 'Sentiment Score', bullish: 'Bullish', bearish: 'Bearish', nextEarnings: 'Next Earnings', epsEstimate: 'EPS Est.', keyTakeaways: 'Key Takeaways', takeawayServices: 'Strong services growth continues to offset softer hardware demand.', takeawayMomentum: 'Price remains above the 20-day moving average with resilient momentum.', takeawayValuation: 'Valuation is elevated versus the five-year average, increasing event risk.', quarterlyPerformance: 'Quarterly Performance', usdBillions: 'Revenue and net income · USD billions', revenue: 'Revenue', netIncome: 'Net Income', myStocks: 'My Stocks', symbols: 'symbols', addStock: 'Add stock', manageWatchlist: 'Manage watchlist' },
     budget: {
@@ -33,6 +45,18 @@ const resources = {
     exportPanel: { title: 'Resume Generator', selectSections: 'SELECT SECTIONS', sections: { experience: 'Include Work Experience', education: 'Include Education', skills: 'Include Skills & Tools', achievements: 'Include Achievements', publications: 'Include Publications', certifications: 'Include Certifications' }, btnExportCv: 'Export as CV', btnExportResume: 'Export as Resume' },
   } },
   zh: { translation: {
+    brandName: '紫微垣',
+    animePlayerShortcuts: '空格 播放/暂停 · ←/→ 快退快进5秒 · ↑/↓ 音量 · F 全屏 · N/P 切集',
+    bottomNav: { label: '移动端导航', home: '首页', stock: '股票' },
+    command: { title: '快捷命令', description: '搜索页面和操作', placeholder: '搜索页面或操作……', empty: '没有符合的命令。', hint: 'Enter 选择 · Esc 关闭', items: { home: '前往首页', homeHint: '打开综合仪表盘', profile: '查看履历', profileHint: '打开个人资料与 Resume 工具', budget: '打开预算管理', budgetHint: '查看交易和财务分析', add: '记一笔账', addHint: '打开手动记账表单', scan: '扫描收据 OCR', scanHint: '打开收据识别工具', anime: '看动漫', animeHint: '浏览动漫或继续观看', stocks: '查看股票', stocksHint: '打开股票分析' } },
+    home: {
+      user: '你好', eyebrow: '个人控制中心', welcome: '欢迎回来，{{name}}', subtitle: '在一个清爽的工作台中掌握财务、娱乐、市场和职业动态。', search: '快速搜索', view: '查看详情',
+      budget: { title: '本月财务快照', subtitle: '当前月份 · MYR', income: '总收入', expense: '总支出' },
+      anime: { kicker: '继续观看', resume: '从约第 {{time}} 分钟继续', continue: '继续播放', emptyTitle: '暂无观看进度', empty: '开始观看后，最近的影片会自动显示在这里。', browse: '浏览动漫' },
+      stocks: { title: '股票自选清单', subtitle: '模拟市场快照' },
+      profile: { kicker: '履历亮点', fallback: '建立你的专业履历', noSkills: '在个人履历加入技能后会显示在这里。', export: '导出 Resume PDF' },
+      quick: { title: '快捷操作', ocr: '扫描收据 OCR', manual: '手动记账', anime: '继续看戏', profile: '查看履历' },
+    },
     theme: { switchToLight: '切换到浅色模式', switchToDark: '切换到深色模式' },
     budget: {
       title: '预算管理', subtitle: '清晰掌握你的收入、支出与现金流。', income: '收入', expense: '支出', loading: '正在加载交易…',

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { LockKeyhole, Mail } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { authService } from '@/services/authService';
 
 export function LoginPage() {
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
@@ -17,10 +17,10 @@ export function LoginPage() {
     setSubmitting(true);
 
     if (mode === 'signIn') {
-      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      const { error: authError } = await authService.signInWithPassword(email, password);
       if (authError) setError(authError.message);
     } else {
-      const { data, error: authError } = await supabase.auth.signUp({ email, password });
+      const { data, error: authError } = await authService.signUp(email, password);
       if (authError) {
         setError(authError.message);
       } else if (!data.session) {
@@ -42,10 +42,7 @@ export function LoginPage() {
     setSuccess(null);
     setSubmitting(true);
 
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    });
+    const { error: authError } = await authService.signInWithGoogle(window.location.origin);
 
     if (authError) {
       setError(authError.message);
@@ -65,7 +62,7 @@ export function LoginPage() {
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-600/25">
             <LockKeyhole size={26} aria-hidden="true" />
           </div>
-          <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-blue-400">My Workspace</p>
+          <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-indigo-400">紫微垣 · Ziwei Enclosure</p>
           <h1 className="text-3xl font-bold tracking-tight text-white">
             {mode === 'signIn' ? 'Welcome back' : 'Create your account'}
           </h1>

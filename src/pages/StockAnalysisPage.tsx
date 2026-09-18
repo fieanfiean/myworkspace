@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AIInsights } from '@/components/Stock/AIInsights';
-import { CandlestickChart } from '@/components/Stock/CandlestickChart';
-import { QuarterlyChart } from '@/components/Stock/QuarterlyChart';
-import { StockTopBar } from '@/components/Stock/StockTopBar';
-import { TickerBanner } from '@/components/Stock/TickerBanner';
-import { Watchlist } from '@/components/Stock/Watchlist';
+import { AIInsights } from '@/components/stock/AIInsights';
+import { CandlestickChart } from '@/components/stock/CandlestickChart';
+import { QuarterlyChart } from '@/components/stock/QuarterlyChart';
+import { StockTopBar } from '@/components/stock/StockTopBar';
+import { TickerBanner } from '@/components/stock/TickerBanner';
+import { Watchlist } from '@/components/stock/Watchlist';
 import { mockStocks } from '@/data/mockData';
 
 export function StockAnalysisPage() {

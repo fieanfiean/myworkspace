@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { FileText, Link, Upload, X } from 'lucide-react';
-import { MAX_UPLOAD_SIZE_BYTES, uploadCertificateFile } from '@/lib/storage';
+import { MAX_UPLOAD_SIZE_BYTES, uploadCertificateFile } from '@/services/storageService';
 import type { Achievement, AchievementCategory } from '@/types/profile';
 import { useT } from '@/hooks/useT';
 

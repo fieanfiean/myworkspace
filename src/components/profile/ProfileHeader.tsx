@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Link2, LoaderCircle, Mail, MapPin, Pencil } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
 import { EditProfileModal, type Profile } from './EditProfileModal';
 import type { Achievement, Experience } from '@/types/profile';
 import { calculateProfileStats } from '@/lib/profileStats';
 import { useT } from '@/hooks/useT';
-import { MAX_UPLOAD_SIZE_BYTES, uploadProfileAvatar } from '@/lib/storage';
+import { MAX_UPLOAD_SIZE_BYTES, uploadProfileAvatar } from '@/services/storageService';
+import { getProfile, saveProfile } from '@/services/profileService';
 
 function fallbackProfile(userId: string, email: string, fullName?: string): Profile {
   return { id: userId, full_name: fullName || email.split('@')[0] || 'New User', headline: '', company: '', location: '', email, website: '', avatar_url: '' };
@@ -37,24 +37,22 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
     const loadProfile = async () => {
       setLoading(true);
       setError(null);
-      const { data, error: fetchError } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
-      if (!active) return;
-      if (fetchError) {
+      try {
+        const data = await getProfile(user.id);
+        if (!active) return;
+        if (data) {
+          setProfile({ ...fallback, ...data, id: user.id });
+          setLoading(false);
+          return;
+        }
+        const created = await saveProfile(fallback);
+        if (!active) return;
+        setProfile({ ...fallback, ...created });
+      } catch (reason) {
+        if (!active) return;
         setProfile(fallback);
-        setError(fetchError.message);
-        setLoading(false);
-        return;
+        setError(reason instanceof Error ? reason.message : String(reason));
       }
-      if (data) {
-        setProfile({ ...fallback, ...(data as Partial<Profile>), id: user.id });
-        setLoading(false);
-        return;
-      }
-
-      const { data: created, error: createError } = await supabase.from('profiles').upsert(fallback, { onConflict: 'id' }).select().single();
-      if (!active) return;
-      setProfile(created ? { ...fallback, ...(created as Partial<Profile>) } : fallback);
-      if (createError) setError(createError.message);
       setLoading(false);
     };
 
@@ -100,12 +98,12 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
     <>
       <section className="profile-header-card">
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-6">
-          <div className="group relative size-24 shrink-0 justify-self-center sm:size-32 sm:justify-self-auto">
+          <div className="group relative size-24 shrink-0 justify-self-center rounded-[1.15rem] bg-gradient-to-tr from-indigo-100 to-purple-100 p-1 dark:from-indigo-500/20 dark:to-purple-500/20 sm:size-32 sm:justify-self-auto">
             {profile.avatar_url
               ? <img src={profile.avatar_url} alt={t('profile.avatar.alt', { name: profile.full_name })} className="size-full rounded-2xl object-cover" />
               : <div className="flex size-full items-center justify-center rounded-2xl bg-blue-600 text-4xl font-bold text-white sm:text-5xl">{initials(profile.full_name)}</div>}
             <input ref={avatarInputRef} type="file" accept="image/*" className="sr-only" onChange={event => void changeAvatar(event)} />
-            <button type="button" disabled={uploadingAvatar} onClick={() => avatarInputRef.current?.click()} aria-label={t('profile.avatar.change')} className="absolute inset-0 flex items-center justify-center rounded-2xl bg-slate-950/65 text-white opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-wait">
+            <button type="button" disabled={uploadingAvatar} onClick={() => avatarInputRef.current?.click()} aria-label={t('profile.avatar.change')} className="absolute inset-1 flex items-center justify-center rounded-2xl bg-slate-950/65 text-white opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-wait">
               {uploadingAvatar ? <LoaderCircle className="animate-spin" size={22} /> : <Camera size={22} />}
             </button>
           </div>

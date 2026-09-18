@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { authService } from '@/services/authService';
 import { AuthContext, type AuthContextValue } from '@/hooks/useAuth';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -10,14 +10,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    void supabase.auth.getSession().then(({ data: { session } }) => {
+    void authService.getSession().then(({ data: { session } }) => {
       if (mounted) {
         setUser(session?.user ?? null);
         setLoading(false);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = authService.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
     });
@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     loading,
     signOut: async () => {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await authService.signOut();
       if (error) throw error;
     },
   }), [loading, user]);

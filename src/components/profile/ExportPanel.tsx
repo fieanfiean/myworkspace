@@ -1,10 +1,9 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, FileText, LoaderCircle } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useT } from '@/hooks/useT';
-import { supabase } from '@/lib/supabase';
-import type { AboutMeData } from '@/types/profile';
-import type { Profile } from './EditProfileModal';
+import type { AboutMeData, Profile } from '@/types/profile';
+import { getResumeExtras } from '@/services/profileService';
 import { formatDateRange } from '@/lib/profileStats';
 
 type SectionKey = 'experience' | 'education' | 'skills' | 'achievements' | 'publications' | 'certifications';
@@ -12,7 +11,7 @@ type ExportKind = 'cv' | 'resume';
 type SectionSelection = Record<SectionKey, boolean>;
 type ExtraRow = Record<string, unknown>;
 interface ExportPayload { profile: Profile; publications: ExtraRow[]; certifications: ExtraRow[] }
-interface ExportPanelProps { data: AboutMeData }
+interface ExportPanelProps { data: AboutMeData; autoResumeToken?: number }
 
 const initialSections: SectionSelection = {
   experience: true, education: true, skills: true, achievements: true, publications: false, certifications: false,
@@ -58,7 +57,7 @@ function ResumeDocument({ data: sourceData, payload, selected, kind }: { data: A
   );
 }
 
-export function ExportPanel({ data }: ExportPanelProps) {
+export function ExportPanel({ data, autoResumeToken = 0 }: ExportPanelProps) {
   const { t } = useT();
   const { user } = useAuth();
   const [selected, setSelected] = useState(initialSections);
@@ -68,24 +67,18 @@ export function ExportPanel({ data }: ExportPanelProps) {
   const [exportKind, setExportKind] = useState<ExportKind>('cv');
   const [exportSelection, setExportSelection] = useState<SectionSelection>(initialSections);
   const documentRef = useRef<HTMLDivElement>(null);
+  const handledAutoResumeToken = useRef(0);
 
   const toggle = (key: SectionKey) => setSelected(current => ({ ...current, [key]: !current[key] }));
-  const exportDocument = async (kind: ExportKind) => {
+  const exportDocument = useCallback(async (kind: ExportKind) => {
     if (!user) return;
     const selectedSnapshot = { ...selected };
     setExportingKind(kind); setError(null);
     try {
-      const requests = [supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()];
-      const [profileResult] = await Promise.all(requests);
-      if (profileResult.error) throw profileResult.error;
-      const profile = profileResult.data as Profile | null;
+      const result = await getResumeExtras(user.id, selectedSnapshot.publications, selectedSnapshot.certifications);
+      const profile = result.profile;
       if (!profile) throw new Error('Complete your profile before exporting.');
-
-      const [publicationResult, certificationResult] = await Promise.all([
-        selectedSnapshot.publications ? supabase.from('publications').select('*').eq('profile_id', user.id) : Promise.resolve({ data: [] }),
-        selectedSnapshot.certifications ? supabase.from('certifications').select('*').eq('profile_id', user.id) : Promise.resolve({ data: [] }),
-      ]);
-      setPayload({ profile, publications: (publicationResult.data ?? []) as ExtraRow[], certifications: (certificationResult.data ?? []) as ExtraRow[] });
+      setPayload({ profile, publications: result.publications as ExtraRow[], certifications: result.certifications as ExtraRow[] });
       setExportKind(kind);
       setExportSelection(selectedSnapshot);
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -102,7 +95,13 @@ export function ExportPanel({ data }: ExportPanelProps) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to generate the document.');
     } finally { setExportingKind(null); }
-  };
+  }, [selected, user]);
+
+  useEffect(() => {
+    if (autoResumeToken <= 0 || handledAutoResumeToken.current === autoResumeToken) return;
+    handledAutoResumeToken.current = autoResumeToken;
+    void exportDocument('resume');
+  }, [autoResumeToken, exportDocument]);
 
   const labels: { key: SectionKey; label: string }[] = [
     { key: 'experience', label: t('exportPanel.sections.experience') }, { key: 'education', label: t('exportPanel.sections.education') },

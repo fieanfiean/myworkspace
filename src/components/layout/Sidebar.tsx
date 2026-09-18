@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { BarChart3, ChevronUp, Clapperboard, LayoutDashboard, LoaderCircle, LogOut, PanelLeftClose, PanelLeftOpen, User, Wallet, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
-import type { Profile } from './EditProfileModal';
+import { getProfileSummary } from '@/services/profileService';
+import type { Profile } from '@/types/profile';
 
 export type Tab = 'dashboard' | 'profile' | 'budget' | 'anime' | 'stocks';
 
@@ -32,7 +32,7 @@ function NavItem({ active, collapsed, icon: Icon, label, onClick }: NavItemProps
         onClick={onClick}
         aria-label={label}
         aria-current={active ? 'page' : undefined}
-        className={`flex w-full items-center rounded-xl py-3 transition-colors ${collapsed ? 'gap-3 px-4 text-left md:justify-center md:px-2' : 'gap-3 px-4 text-left'} ${active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
+        className={`flex w-full items-center rounded-xl py-3 transition-colors ${collapsed ? 'gap-3 px-4 text-left md:justify-center md:px-2' : 'gap-3 px-4 text-left'} ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950/30' : 'text-slate-400 hover:bg-indigo-500/15 hover:text-indigo-300'}`}
       >
         <Icon className="shrink-0" size={20} />
         <span className={`truncate whitespace-nowrap transition-opacity duration-200 ${collapsed ? 'md:pointer-events-none md:w-0 md:opacity-0' : 'opacity-100'}`}>{label}</span>
@@ -55,8 +55,8 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
 
   useEffect(() => {
     if (!user) return;
-    void supabase.from('profiles').select('full_name, avatar_url').eq('id', user.id).maybeSingle().then(({ data }) => {
-      if (data) setProfile(data as Pick<Profile, 'full_name' | 'avatar_url'>);
+    void getProfileSummary(user.id).then(data => {
+      if (data) setProfile(data);
     });
     const updateProfile = (event: Event) => setProfile((event as CustomEvent<Profile>).detail);
     window.addEventListener('profile-updated', updateProfile);
@@ -85,11 +85,11 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
 
   return (<>
     <button type="button" aria-label={t('sidebar.closeMenu')} onClick={onMobileClose} className={`fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm transition-opacity md:hidden ${mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`} />
-    <aside data-swipe-drawer="left" className={`fixed left-0 top-0 z-50 flex h-dvh w-72 touch-pan-y flex-col justify-between overscroll-x-contain border-r border-slate-800 bg-slate-900 p-6 text-white transition-[transform,width] duration-300 ease-in-out md:z-40 md:h-screen md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${isCollapsed ? 'md:w-16 md:px-2 md:py-6' : 'md:w-64 md:p-6'}`}>
+    <aside data-swipe-drawer="left" className={`fixed left-0 top-0 z-50 flex h-dvh w-72 touch-pan-y flex-col justify-between overscroll-x-contain border-r border-slate-800/80 bg-[#0B0F17] p-6 text-white transition-[transform,width] duration-300 ease-in-out md:z-40 md:h-screen md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${isCollapsed ? 'md:w-16 md:px-2 md:py-6' : 'md:w-64 md:p-6'}`}>
       <div className="min-w-0">
         <div className={`mb-8 flex items-center justify-between gap-3 ${isCollapsed ? 'md:flex-col' : ''}`}>
-          <h1 className="min-w-0 truncate font-bold text-blue-400" aria-label={t('sidebar.workspace')}>
-            {isCollapsed ? <><span className="text-xl md:hidden">{t('sidebar.workspace')}</span><span className="hidden text-sm md:inline">MW</span></> : <span className="text-xl">{t('sidebar.workspace')}</span>}
+          <h1 className="min-w-0 truncate font-bold text-indigo-400" aria-label={t('brandName')}>
+            {isCollapsed ? <><span className="text-xl md:hidden">{t('brandName')}</span><span className="hidden text-sm md:inline">紫</span></> : <span className="text-xl">{t('brandName')}</span>}
           </h1>
           <button type="button" onClick={onMobileClose} className="shrink-0 rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white md:hidden" aria-label={t('sidebar.closeMenu')}><X size={20}/></button>
           <button type="button" onClick={onToggle} className="hidden shrink-0 rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white md:block" aria-label={t(isCollapsed ? 'sidebar.expand' : 'sidebar.collapse')} title={t(isCollapsed ? 'sidebar.expand' : 'sidebar.collapse')}>
@@ -113,7 +113,7 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
           <button type="button" disabled={signingOut} onClick={() => void handleSignOut()} className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:opacity-60">{signingOut ? <LoaderCircle className="animate-spin" size={17} /> : <LogOut size={17} />}<span>{signingOut ? t('account.signingOut') : t('account.logout')}</span></button>
         </div>}
         <button type="button" onClick={() => setAccountOpen(open => !open)} aria-expanded={accountOpen} aria-label={t('account.manage')} className={`flex w-full items-center rounded-xl border border-slate-700 bg-slate-800 py-2 text-slate-300 transition hover:bg-slate-700 ${isCollapsed ? 'gap-3 px-2 md:justify-center md:px-1' : 'gap-3 px-2'}`}>
-          {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="size-9 shrink-0 rounded-lg object-cover" /> : <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">{accountInitials}</span>}
+          {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="size-9 shrink-0 rounded-lg object-cover" /> : <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-xs font-bold text-white">{accountInitials}</span>}
           <span className={`min-w-0 flex-1 text-left ${isCollapsed ? 'md:hidden' : ''}`}><span className="block truncate text-sm font-medium text-white">{displayName}</span><span className="block truncate text-xs text-slate-400">{user?.email}</span></span><ChevronUp size={16} className={`shrink-0 transition-transform ${isCollapsed ? 'md:hidden' : ''} ${accountOpen ? 'rotate-180' : ''}`} />
         </button>
       </div>

@@ -10,6 +10,8 @@ export interface Anime {
   year: number;
   genres: string[];
   episodes: AnimeEpisode[];
+  episode_count: number;
+  watched_episodes: number;
   status: 'ongoing' | 'completed';
   category: string | null;
   region_category: string | null;

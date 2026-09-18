@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type UIEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type UIEvent } from 'react';
 import { AlertTriangle, ArrowUpRight, Banknote, BookOpen, CalendarDays, Camera, Car, CircleDollarSign, Clapperboard, Dumbbell, Gift, HeartPulse, LoaderCircle, Plane, Plus, ReceiptText, Search, Shirt, ShoppingCart, Utensils, WalletCards, X, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import imageCompression from 'browser-image-compression';
@@ -6,19 +6,39 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { useAuth } from '@/hooks/useAuth';
 import { useBudgetTransactions } from '@/hooks/useBudgetTransactions';
 import { getMyrPerCurrency } from '@/lib/exchangeRates';
-import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
-import { TransactionEditModal } from '@/components/Budget/TransactionEditModal';
-import { TransactionDetailModal } from '@/components/Budget/TransactionDetailModal';
-import { ExchangeRateAttribution } from '@/components/Budget/ExchangeRateAttribution';
+import { DeleteConfirmDialog } from '@/components/common/DeleteConfirmDialog';
+import { TransactionEditModal } from '@/components/budget/TransactionEditModal';
+import { TransactionDetailModal } from '@/components/budget/TransactionDetailModal';
+import { ExchangeRateAttribution } from '@/components/budget/ExchangeRateAttribution';
 import { filterBudgetTransactions, type CategoryFilter, type DateRangePreset, type TransactionTypeFilter } from '@/lib/budgetFilters';
 import { checkDuplicateTransaction, type DuplicateCheckResult, type ParsedOCRResult } from '@/lib/deduplication';
-import { supabase } from '@/lib/supabase';
-import { uploadToR2 } from '@/lib/storage';
+import { parseReceipt } from '@/services/budgetService';
+import { uploadToR2 } from '@/services/storageService';
 import { categoriesForType, expenseCategories, incomeCategories, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
 
 const baseCurrency: CurrencyCode = 'MYR';
 const transactionPageSize = 50;
 const currencies: CurrencyCode[] = ['MYR', 'USD', 'SGD', 'JPY', 'EUR', 'GBP', 'CNY', 'THB', 'TWD'];
+
+function AnimatedCurrency({ value, format }: { value: number; format: (amount: number) => string }) {
+  const [display, setDisplay] = useState(0);
+  const previous = useRef(0);
+  useEffect(() => {
+    const from = previous.current;
+    const started = performance.now();
+    let frame = 0;
+    const tick = (time: number) => {
+      const progress = Math.min(1, (time - started) / 650);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(from + (value - from) * eased);
+      if (progress < 1) frame = requestAnimationFrame(tick);
+      else previous.current = value;
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+  return <>{format(display)}</>;
+}
 const categoryStyle: Record<TransactionCategory, { icon: typeof CircleDollarSign; classes: string }> = {
   salary: { icon: CircleDollarSign, classes: 'bg-emerald-500/15 text-emerald-400' },
   bonus: { icon: ArrowUpRight, classes: 'bg-lime-500/15 text-lime-400' },
@@ -134,6 +154,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const [loadingRate, setLoadingRate] = useState(false);
   const [rateError, setRateError] = useState<string | null>(null);
   const [scanningReceipt, setScanningReceipt] = useState(false);
+  const [draggingReceipt, setDraggingReceipt] = useState(false);
   const [duplicateMatch, setDuplicateMatch] = useState<DuplicateCheckResult | null>(null);
   const [batchItems, setBatchItems] = useState<BatchImportItem[]>([]);
   const [viewing, setViewing] = useState<BudgetTransaction | null>(null);
@@ -178,7 +199,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
         useWebWorker: true,
       });
       const imageUrl = await uploadToR2(compressedFile, 'receipts');
-      const { data, error: invokeError } = await supabase.functions.invoke<ReceiptFunctionResponse>('parse-receipt', { body: { imageUrl } });
+      const { data, error: invokeError } = await parseReceipt<ReceiptFunctionResponse>(imageUrl);
       if (invokeError) {
         setFormError(await receiptInvokeErrorMessage(invokeError, t('budget.form.scanError'), t('budget.form.scanRateLimit'), t('budget.form.scanServiceUnavailable')));
         return;
@@ -263,6 +284,18 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const visibleTransactionCount = transactionPage.filterKey === transactionFilterKey ? transactionPage.count : transactionPageSize;
   const setVisibleTransactionCount = (update: (count: number) => number) => {
     setTransactionPage({ filterKey: transactionFilterKey, count: update(visibleTransactionCount) });
+  };
+
+  const handleReceiptDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDraggingReceipt(false);
+    const file = event.dataTransfer.files[0];
+    const input = fileInputRef.current;
+    if (!file || !input || scanningReceipt || saving) return;
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
   };
 
   const groupedTransactions = useMemo(() => {
@@ -394,11 +427,11 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
     <div><h1 className="text-2xl font-bold tracking-tight text-white">{t('budget.title')}</h1><p className="mt-1 text-sm text-slate-400">{t('budget.subtitle')}</p></div>
     {(error || formError) && <div role="alert" className="rounded-xl border border-rose-800/70 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">{formError ?? error?.message}</div>}
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
-      <div className="grid gap-3 sm:grid-cols-3">{[
-        { label: t('budget.visual.totalIncome'), value: visualSummary.income, color: 'text-emerald-400', bar: 'bg-emerald-400' },
-        { label: t('budget.visual.totalExpense'), value: visualSummary.expense, color: 'text-rose-400', bar: 'bg-rose-400' },
-        { label: t('budget.visual.netBalance'), value: visualSummary.net, color: visualSummary.net >= 0 ? 'text-indigo-300' : 'text-rose-300', bar: 'bg-indigo-400' },
-      ].map(item => <article key={item.label} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-xl shadow-black/10"><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</p><p className={`mt-2 text-xl font-bold ${item.color}`}>{currency.format(item.value)}</p><div className="mt-4 h-1 overflow-hidden rounded-full bg-slate-800"><div className={`h-full w-2/3 rounded-full ${item.bar}`}/></div></article>)}</div>
+      <div className="grid gap-3 sm:grid-cols-3">{loading ? Array.from({ length: 3 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl border border-slate-200 bg-slate-200/70 dark:border-slate-800 dark:bg-slate-800/70"><div className="m-4 h-3 w-24 rounded bg-slate-300 dark:bg-slate-700"/><div className="mx-4 mt-4 h-7 w-32 rounded bg-slate-300 dark:bg-slate-700"/></div>) : [
+        { label: t('budget.visual.totalIncome'), value: visualSummary.income, color: 'text-emerald-400', bar: 'bg-emerald-400', glow: 'from-emerald-500/10' },
+        { label: t('budget.visual.totalExpense'), value: visualSummary.expense, color: 'text-rose-400', bar: 'bg-rose-400', glow: 'from-rose-500/10' },
+        { label: t('budget.visual.netBalance'), value: visualSummary.net, color: visualSummary.net >= 0 ? 'text-indigo-300' : 'text-rose-300', bar: 'bg-indigo-400', glow: 'from-indigo-500/10' },
+      ].map(item => <article key={item.label} className={`overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br ${item.glow} to-transparent p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-xl dark:shadow-black/10`}><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</p><p className={`mt-2 text-xl font-bold tabular-nums ${item.color}`}><AnimatedCurrency value={item.value} format={currency.format}/></p><div className="mt-4 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className={`h-full w-2/3 rounded-full ${item.bar}`}/></div></article>)}</div>
       <article className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-xl shadow-black/10"><h3 className="font-semibold text-white">{t('budget.visual.topCategories')}</h3><div className="mt-4 space-y-3">{visualSummary.topCategories.length === 0 ? <p className="text-sm text-slate-500">{t('budget.visual.noExpenses')}</p> : visualSummary.topCategories.map(({ category, amount, percent }, index) => <div key={category}><div className="mb-1 flex items-center justify-between gap-3 text-xs"><span className="truncate text-slate-300">{t(`budget.categories.${category}`)}</span><span className="shrink-0 text-slate-500">{percent.toFixed(0)}% · {currency.format(amount)}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-800"><div className={['bg-indigo-400','bg-rose-400','bg-amber-400','bg-cyan-400','bg-fuchsia-400'][index]} style={{ width: `${percent}%`, height: '100%' }}/></div></div>)}</div></article>
     </section>
 
@@ -438,9 +471,12 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
         <form className="relative space-y-5" aria-busy={scanningReceipt} onSubmit={event => void submit(event)}>
           {scanningReceipt && <div className="absolute -inset-2 z-20 flex min-h-full items-center justify-center rounded-xl bg-slate-900/90 backdrop-blur-sm" role="status"><span className="flex flex-col items-center gap-3 text-sm font-semibold text-indigo-300"><LoaderCircle size={32} className="animate-spin"/>{t('budget.form.scanning')}</span></div>}
           <div className="space-y-3">
+            <div onDragEnter={event => { event.preventDefault(); setDraggingReceipt(true); }} onDragOver={event => event.preventDefault()} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingReceipt(false); }} onDrop={handleReceiptDrop} className={`relative overflow-hidden rounded-2xl border-2 border-dashed p-2 transition ${draggingReceipt ? 'border-indigo-400 bg-indigo-500/20' : 'border-indigo-500/40 bg-indigo-500/5'}`}>
+              {(draggingReceipt || scanningReceipt) && <span className="scan-beam pointer-events-none absolute inset-x-2 top-0 z-10 h-px bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_16px_3px_rgba(34,211,238,0.75)]"/>}
             <button type="button" disabled={scanningReceipt || saving} onClick={() => fileInputRef.current?.click()} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-500/60 bg-indigo-500/10 px-4 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60">
               <Camera size={19}/><span>{t('budget.form.scanReceipt')}</span>
             </button>
+            </div>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" disabled={scanningReceipt || saving} onChange={event => void handleFileSelect(event)}/>
             <p className="text-center text-xs text-slate-500">{t('budget.form.scanHint')}</p>
           </div>

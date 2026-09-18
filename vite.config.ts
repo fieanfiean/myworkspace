@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       injectRegister: 'auto',
       includeAssets: [
         'favicon.ico',
@@ -26,8 +26,8 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       manifest: {
-        name: 'My Workspace & Budget Tracker',
-        short_name: 'Workspace',
+        name: '紫微垣 · Personal Workspace',
+        short_name: '紫微垣',
         description: 'Personal portfolio, resume generator, and budget tracker.',
         start_url: '/',
         scope: '/',

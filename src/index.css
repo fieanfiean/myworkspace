@@ -1,5 +1,41 @@
 @config "../tailwind.config.js";
 @import "tailwindcss";
+
+/* 紫微垣 (Ziwei Enclosure) — global visual theme */
+
+@keyframes scan-beam {
+  0% { transform: translateY(0); opacity: 0; }
+  12%, 88% { opacity: 1; }
+  100% { transform: translateY(4.25rem); opacity: 0; }
+}
+
+.scan-beam { animation: scan-beam 1.65s ease-in-out infinite; }
+
+@keyframes insight-shimmer {
+  0%, 65% { transform: translateX(-140%) rotate(18deg); opacity: 0; }
+  75% { opacity: .7; }
+  100% { transform: translateX(320%) rotate(18deg); opacity: 0; }
+}
+
+.ai-insights-border::after {
+  animation: insight-shimmer 4.5s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+  content: '';
+  height: 180%;
+  left: -35%;
+  pointer-events: none;
+  position: absolute;
+  top: -40%;
+  width: 18%;
+  z-index: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-beam,
+  .ai-insights-border::after {
+    animation: none;
+  }
+}
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ==================================================
@@ -13,19 +49,24 @@ body {
 }
 
 :root {
+  --theme-name: "紫微垣";
+  --ziwei-page: #0b0f17;
+  --ziwei-card: #131927;
+  --ziwei-border: rgba(30, 41, 59, 0.8);
+  --ziwei-accent: #4f46e5;
   --chart-tooltip-bg: #ffffff;
   --chart-tooltip-border: #e2e8f0;
   --chart-tooltip-text: #0f172a;
 }
 
 .dark body {
-  background-color: #0b0f17;
+  background-color: var(--ziwei-page);
   color: #f8fafc;
 }
 
 .dark {
-  --chart-tooltip-bg: #0f172a;
-  --chart-tooltip-border: #334155;
+  --chart-tooltip-bg: var(--ziwei-card);
+  --chart-tooltip-border: var(--ziwei-border);
   --chart-tooltip-text: #f8fafc;
 }
 
@@ -49,8 +90,8 @@ body {
 }
 
 .dark .profile-header-card {
-  background-color: #161b26;
-  border-color: #1e293b;
+  background-color: #131927;
+  border-color: rgba(30, 41, 59, 0.8);
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
 }
 
@@ -62,7 +103,7 @@ body {
   text-align: center;
 }
 
-.dark .stat-box { background-color: #1e293b; border-color: #334155; }
+.dark .stat-box { background-color: #131927; border-color: rgba(30, 41, 59, 0.8); }
 
 /* 右侧导出面板 */
 .export-panel-container {
@@ -73,7 +114,7 @@ body {
   position: static;
 }
 
-.dark .export-panel-container { background-color: #161b26; border-color: #1e293b; }
+.dark .export-panel-container { background-color: #131927; border-color: rgba(30, 41, 59, 0.8); }
 
 /* ==================================================
    3. 履历卡片组 (Content Cards)
@@ -89,12 +130,12 @@ body {
   transition: all 0.2s ease-in-out;
 
   &-active {
-    border-color: #2563eb;
-    box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.2);
+    border-color: #4f46e5;
+    box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.2);
   }
 }
 
-.dark .exp-card { background-color: #161b26; border-color: #1e293b; }
+.dark .exp-card { background-color: #131927; border-color: rgba(30, 41, 59, 0.8); }
 
 /* 教育经历卡片 */
 .edu-card {
@@ -106,7 +147,7 @@ body {
   margin-left: 0;
 }
 
-.dark .edu-card { background-color: #161b26; border-color: #1e293b; }
+.dark .edu-card { background-color: #131927; border-color: rgba(30, 41, 59, 0.8); }
 
 /* 技能进度的卡片盒 */
 .skill-box {
@@ -116,7 +157,7 @@ body {
   padding: 1.5rem;
 }
 
-.dark .skill-box { background-color: #161b26; border-color: #1e293b; }
+.dark .skill-box { background-color: #131927; border-color: rgba(30, 41, 59, 0.8); }
 
 .skill-bar-bg {
   width: 100%;
@@ -147,7 +188,49 @@ body {
   }
 }
 
-.dark .achievement-card { background-color: #161b26; border-color: #1e293b; }
+.dark .achievement-card { background-color: #131927; border-color: rgba(30, 41, 59, 0.8); }
+
+.dark .dashboard-light-page :is(.bg-slate-900\/80, .bg-slate-900\/75, .bg-slate-900\/60, .bg-slate-900) {
+  background-color: #131927;
+}
+
+.dark .dashboard-light-page :is(.border-slate-800, .border-slate-800\/80) {
+  border-color: rgba(30, 41, 59, 0.8);
+}
+
+.dark .dashboard-light-page [class~="bg-[#111827]"],
+.dark .dashboard-light-page [class~="bg-[#161F30]"] {
+  background-color: #131927;
+  border-color: rgba(30, 41, 59, 0.8);
+}
+
+/* Shared 紫微垣 glass cards across every authenticated page. */
+.ziwei-layout .rounded-2xl.border {
+  backdrop-filter: blur(24px);
+  background-color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(226, 232, 240, 0.8);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  transition: all 200ms ease;
+}
+
+.ziwei-layout .rounded-2xl.border:hover {
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
+}
+
+.dark .ziwei-layout .rounded-2xl.border {
+  background-color: rgba(19, 25, 39, 0.7);
+  border-color: rgba(30, 41, 59, 0.8);
+  box-shadow: none;
+}
+
+.dark .ziwei-layout .rounded-2xl.border:hover {
+  border-color: #334155;
+  box-shadow: none;
+}
+
+.trading-grid {
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 59px, rgba(99, 102, 241, 0.06) 60px);
+}
 
 @media (min-width: 640px) {
   .profile-header-card { padding: 2rem; }
@@ -249,9 +332,9 @@ html:not(.dark) .dashboard-light-page .recharts-default-tooltip {
 }
 
 .tag-green {
-  background-color: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: #10b981;
+  background-color: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  color: #cbd5e1;
   font-size: 0.75rem;
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
@@ -272,11 +355,11 @@ html:not(.dark) .dashboard-light-page .recharts-default-tooltip {
 }
 
 .btn-primary-lg {
-  background-color: #2563eb;
+  background-color: #4f46e5;
   color: #ffffff;
 
   &:hover {
-    background-color: #1d4ed8;
+    background-color: #4338ca;
   }
 }
 

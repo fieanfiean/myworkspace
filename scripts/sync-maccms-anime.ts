@@ -20,7 +20,7 @@ interface AnimeRow {
   status: 'completed' | 'ongoing'; region_category: string | null; area: string | null;
   source_site: string; updated_at: string; release_date: string;
 }
-type AnimeDbRow = Omit<AnimeRow, 'episodes'>;
+type AnimeDbRow = Omit<AnimeRow, 'episodes'> & { episode_count: number };
 interface SyncOptions { source: string; startPage: number; pages: number; batchSize: number; all: boolean; delayMs: number; typeIds: Array<string | undefined> }
 
 const DEFAULT_SOURCE = 'https://ffzy5.tv/api.php/provide/vod/?ac=detail';
@@ -276,8 +276,7 @@ async function main(): Promise<void> {
         // ================= 3. 剔除 episodes 巨型字段，瘦身数据库行 =================
         const dbBatch = batch.map((item) => {
           const { episodes, ...rest } = item;
-          void episodes;
-          return rest;
+          return { ...rest, episode_count: episodes.length };
         });
 
         // 写入 Supabase 数据库

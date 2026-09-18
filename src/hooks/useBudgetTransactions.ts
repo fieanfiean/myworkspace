@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createTransaction, createTransactions, deleteTransactionById, fetchTransactions, subscribeToTransactions, updateTransactionById } from '@/services/budgetService';
 import { expenseCategories, incomeCategories, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
 
 interface TransactionRow {
@@ -16,9 +16,6 @@ interface TransactionRow {
   original_amount: number | string | null;
   exchange_rate: number | string | null;
 }
-
-const TRANSACTION_BATCH_SIZE = 200;
-const transactionColumns = 'id,profile_id,type,amount,description,date,transaction_time,category,created_at,original_currency,original_amount,exchange_rate';
 
 const normalizeCategory = (category: string, type: TransactionType): TransactionCategory => {
   const normalized = category.trim().toLocaleLowerCase().replace(/[\s-]+/g, '_');
@@ -65,22 +62,7 @@ export function useBudgetTransactions(userId: string | undefined) {
 
     setLoading(true);
     try {
-      const rows: TransactionRow[] = [];
-      for (let from = 0; ; from += TRANSACTION_BATCH_SIZE) {
-        const { data, error: queryError } = await supabase
-          .from('transactions')
-          .select(transactionColumns)
-          .eq('profile_id', userId)
-          .order('date', { ascending: false })
-          .order('transaction_time', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(from, from + TRANSACTION_BATCH_SIZE - 1);
-        if (queryError) throw new Error(queryError.message);
-        const batch = (data ?? []) as TransactionRow[];
-        rows.push(...batch);
-        if (batch.length < TRANSACTION_BATCH_SIZE) break;
-      }
+      const rows = await fetchTransactions(userId) as unknown as TransactionRow[];
       setTransactions(rows.map(fromRow));
       setError(null);
     } catch (cause) {
@@ -93,78 +75,31 @@ export function useBudgetTransactions(userId: string | undefined) {
     queueMicrotask(() => void refresh());
     if (!userId) return;
 
-    const channel = supabase
-      .channel(`transactions-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'transactions', filter: `profile_id=eq.${userId}` },
-        () => void refresh(),
-      )
-      .subscribe();
-
-    return () => { void supabase.removeChannel(channel); };
+    return subscribeToTransactions(userId, () => void refresh());
   }, [refresh, userId]);
 
   const addTransaction = useCallback(async (transaction: NewBudgetTransaction) => {
     if (!userId) throw new Error('Missing authenticated user.');
-    const { error: insertError } = await supabase.from('transactions').insert({
-      profile_id: userId,
-      type: transaction.type,
-      amount: transaction.amount,
-      description: transaction.description.trim(),
-      date: transaction.transactionDate,
-      transaction_time: transaction.transaction_time || null,
-      category: transaction.category,
-      original_currency: transaction.originalCurrency ?? 'MYR',
-      original_amount: transaction.originalAmount ?? transaction.amount,
-      exchange_rate: transaction.exchangeRate ?? 1,
-    });
-    if (insertError) throw new Error(insertError.message);
+    await createTransaction(userId, transaction);
     await refresh();
   }, [refresh, userId]);
 
   const addTransactions = useCallback(async (items: NewBudgetTransaction[]) => {
     if (!userId) throw new Error('Missing authenticated user.');
     if (items.length === 0) return;
-    const rows = items.map(transaction => ({
-      profile_id: userId,
-      type: transaction.type,
-      amount: transaction.amount,
-      description: transaction.description.trim(),
-      date: transaction.transactionDate,
-      transaction_time: transaction.transaction_time || null,
-      category: transaction.category,
-      original_currency: transaction.originalCurrency ?? 'MYR',
-      original_amount: transaction.originalAmount ?? transaction.amount,
-      exchange_rate: transaction.exchangeRate ?? 1,
-    }));
-    const { error: insertError } = await supabase.from('transactions').insert(rows);
-    if (insertError) throw new Error(insertError.message);
+    await createTransactions(userId, items);
     await refresh();
   }, [refresh, userId]);
 
   const updateTransaction = useCallback(async (id: string, transaction: NewBudgetTransaction) => {
     if (!userId) throw new Error('Missing authenticated user.');
-    const { data: updated, error: updateError } = await supabase.from('transactions').update({
-      type: transaction.type,
-      amount: transaction.amount,
-      description: transaction.description.trim(),
-      date: transaction.transactionDate,
-      transaction_time: transaction.transaction_time || null,
-      category: transaction.category,
-      original_currency: transaction.originalCurrency ?? 'MYR',
-      original_amount: transaction.originalAmount ?? transaction.amount,
-      exchange_rate: transaction.exchangeRate ?? 1,
-    }).eq('id', id).eq('profile_id', userId).select('id').maybeSingle();
-    if (updateError) throw new Error(updateError.message);
-    if (!updated) throw new Error('Transaction was not updated. Check the update RLS policy.');
+    await updateTransactionById(userId, id, transaction);
     await refresh();
   }, [refresh, userId]);
 
   const deleteTransaction = useCallback(async (id: string) => {
     if (!userId) throw new Error('Missing authenticated user.');
-    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id).eq('profile_id', userId);
-    if (deleteError) throw new Error(deleteError.message);
+    await deleteTransactionById(userId, id);
     await refresh();
   }, [refresh, userId]);
 

@@ -1,17 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { saveProfile } from '@/services/profileService';
+import type { Profile } from '@/types/profile';
 
-export interface Profile {
-  id: string;
-  full_name: string;
-  headline: string;
-  company: string;
-  location: string;
-  email: string;
-  website: string;
-  avatar_url: string;
-}
+export type { Profile } from '@/types/profile';
 
 interface EditProfileModalProps { profile: Profile; onClose: () => void; onSaved: (profile: Profile) => void }
 const textFields: { key: keyof Pick<Profile, 'full_name' | 'headline' | 'company' | 'location' | 'email' | 'website'>; label: string; type?: string }[] = [
@@ -41,10 +33,10 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
       website: form.website,
       avatar_url: form.avatar_url,
     };
-    const { data, error: saveError } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' }).select().single();
+    let savedProfile: Profile;
+    try { savedProfile = await saveProfile(payload); }
+    catch (reason) { setSaving(false); setError(reason instanceof Error ? reason.message : String(reason)); return; }
     setSaving(false);
-    if (saveError) { setError(saveError.message); return; }
-    const savedProfile = { ...payload, ...(data as Partial<Profile>) };
     onSaved(savedProfile);
     window.dispatchEvent(new CustomEvent<Profile>('profile-updated', { detail: savedProfile }));
     onClose();

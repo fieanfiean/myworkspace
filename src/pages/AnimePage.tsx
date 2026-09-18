@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, Clapperboard, RefreshCw, Search, SlidersHorizontal, Star } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { AnimePlayerModal } from "@/components/AnimePlayerModal";
-import { supabase } from "@/lib/supabase";
+import { AnimePlayerModal } from "@/components/anime/AnimePlayerModal";
+import { AnimeTrackerPanel } from "@/components/anime/AnimeTrackerPanel";
+import { fetchAnimePage } from "@/services/animeService";
 import type { Anime, AnimeEpisode } from "@/types/anime";
 
 const PAGE_SIZE = 24;
@@ -58,6 +59,8 @@ function normalizeAnime(value: unknown): Anime | null {
       ? row.genres.filter((genre): genre is string => typeof genre === "string")
       : [],
     episodes: Array.isArray(row.episodes) ? row.episodes.filter(isEpisode) : [],
+    episode_count: Number.isFinite(Number(row.episode_count)) ? Math.max(0, Number(row.episode_count)) : 0,
+    watched_episodes: Number.isFinite(Number(row.watched_episodes)) ? Math.max(0, Number(row.watched_episodes)) : 0,
     status: row.status === "completed" ? "completed" : "ongoing",
     category: typeof row.region_category === "string" ? row.region_category : null,
     region_category: typeof row.region_category === "string" ? row.region_category : null,
@@ -110,45 +113,28 @@ export function AnimePage() {
     if (page === 1) setLoading(true);
     else setLoadingMore(true);
     setError(null);
-    let request = supabase
-      .from("animes")
-      .select(
-        "id,external_id,title,cover_url,description,rating,year,genres,episodes,status,region_category,area,release_date,source_site,updated_at",
-        { count: "exact" },
-      )
-      .order("updated_at", { ascending: false });
-    if (searchQuery) request = request.ilike("title", `%${searchQuery}%`);
-    if (filters.type === "movie") request = request.like("region_category", "%片%");
-    else if (filters.type === "series") request = request.like("region_category", "%剧%");
-    else if (filters.type === "anime") request = request.like("region_category", "%动漫%");
-    else if (filters.type === "documentary") {
-      request = request.or("region_category.like.%记录片%,region_category.like.%综艺%");
+    let result: Awaited<ReturnType<typeof fetchAnimePage>>;
+    try {
+      result = await fetchAnimePage({
+        search: searchQuery,
+        type: filters.type,
+        areas: filters.region === "all" ? undefined : genreAliases.region[filters.region],
+        genres: filters.genre === "all" ? undefined : genreAliases.genre[filters.genre],
+        status: filters.status,
+        year: filters.year,
+      }, page, PAGE_SIZE);
+    } catch (reason) {
+      if (requestId !== requestSequence.current) return;
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setLoading(false);
+      setLoadingMore(false);
+      return;
     }
-    if (filters.region !== "all") request = request.in("area", genreAliases.region[filters.region]);
-    if (filters.genre !== "all") request = request.overlaps("genres", genreAliases.genre[filters.genre]);
-    if (filters.status !== "all") request = request.eq("status", filters.status);
-    if (filters.year !== "all") {
-      if (filters.year === "2020s") request = request.gte("year", 2020).lte("year", 2029);
-      else if (filters.year === "2010s") request = request.gte("year", 2010).lte("year", 2019);
-      else request = request.eq("year", Number(filters.year));
-    }
-    const from = (page - 1) * PAGE_SIZE;
-    const {
-      data,
-      error: queryError,
-      count,
-    } = await request.range(from, from + PAGE_SIZE - 1);
     if (requestId !== requestSequence.current) return;
-    if (queryError) setError(queryError.message);
-    else {
-      const items = (data ?? [])
-        .map(normalizeAnime)
-        .filter((item): item is Anime => item !== null);
-      const exactTotal = count ?? 0;
-      setAnime((current) => (page === 1 ? items : [...current, ...items]));
-      setTotal(exactTotal);
-      setHasMore(from + items.length < exactTotal);
-    }
+    const items = result.rows.map(normalizeAnime).filter((item): item is Anime => item !== null);
+    setAnime((current) => (page === 1 ? items : [...current, ...items]));
+    setTotal(result.total);
+    setHasMore(result.from + items.length < result.total);
     setLoading(false);
     setLoadingMore(false);
   }, [filters, page, searchQuery]);
@@ -214,6 +200,8 @@ export function AnimePage() {
         </label>
       </header>
 
+      <AnimeTrackerPanel />
+
       <section className="mb-7 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111622] dark:shadow-none" aria-label={t("anime.filters.title")}>
         <button type="button" onClick={() => setFiltersOpen(value => !value)} aria-expanded={filtersOpen} className="flex min-h-12 w-full items-center justify-between gap-3 px-4 text-left text-sm font-semibold text-slate-200 sm:px-5"><span className="flex items-center gap-2"><SlidersHorizontal size={17} className="text-violet-400"/>{t("anime.filters.title")}</span><ChevronDown size={17} className={`transition ${filtersOpen ? "rotate-180" : ""}`}/></button>
         {filtersOpen && <div className="space-y-4 border-t border-slate-100 p-4 dark:border-slate-800 sm:p-5">{(Object.keys(filterOptions) as FilterKey[]).map(key => <div key={key} className="grid gap-2 sm:grid-cols-[6rem_minmax(0,1fr)] sm:items-start"><h2 className="pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">{t(`anime.filters.dimensions.${key}`)}</h2><div className="flex flex-wrap gap-2">{filterOptions[key].map(value => <button key={value} type="button" onClick={() => changeFilter(key, value)} className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition sm:text-sm ${filters[key] === value ? "bg-violet-600 text-white shadow-sm dark:shadow-md dark:shadow-violet-950/40" : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-[#181F30] dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"}`}>{t(`anime.filters.options.${key}.${value}`)}</button>)}</div></div>)}</div>}
@@ -263,8 +251,8 @@ export function AnimePage() {
                     : item.status === "completed"
                       ? t("anime.cards.completed")
                       : item.status === "ongoing"
-                        ? item.episodes.length > 0
-                          ? t("anime.cards.updatedTo", { count: item.episodes.length })
+                        ? (item.episode_count || item.episodes.length) > 0
+                          ? t("anime.cards.updatedTo", { count: item.episode_count || item.episodes.length })
                           : t("anime.filters.options.status.ongoing")
                         : item.episodes.length > 0
                           ? t("anime.cards.updatedTo", { count: item.episodes.length })
@@ -274,7 +262,7 @@ export function AnimePage() {
                     key={item.id}
                     type="button"
                     onClick={() => setPlaying(item)}
-                    className="group min-w-0 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-transparent dark:bg-transparent dark:p-0 dark:shadow-none"
+                    className="group min-w-0 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-sm ring-0 transition-all hover:-translate-y-0.5 hover:ring-2 hover:ring-indigo-500/50 hover:shadow-md dark:border-transparent dark:bg-transparent dark:p-0 dark:shadow-none"
                   >
                     <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-[#181F30] ring-1 ring-white/5">
                       {item.cover_url ? (
@@ -297,7 +285,7 @@ export function AnimePage() {
                         {badge}
                       </span>
                     </div>
-                    <h3 className="mt-3 truncate text-sm font-semibold text-slate-100 group-hover:text-violet-300">
+                    <h3 className="mt-3 truncate text-sm font-semibold text-slate-100 group-hover:text-indigo-300">
                       {item.title}
                     </h3>
                     <p className="mt-1 text-xs text-slate-500">

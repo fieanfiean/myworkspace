@@ -16,11 +16,14 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1130.0",
+    "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-tabs": "^1.1.21",
     "@supabase/supabase-js": "^2.112.4",
     "@tailwindcss/vite": "^4.3.3",
     "@types/hls.js": "^1.0.0",
     "browser-image-compression": "^2.0.2",
+    "clsx": "^2.1.1",
+    "framer-motion": "^13.4.0",
     "hls.js": "^1.7.2",
     "html2pdf.js": "^0.14.0",
     "i18next": "^26.4.0",
@@ -29,7 +32,9 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-i18next": "^17.0.12",
-    "recharts": "^3.10.1"
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.7.0",
+    "vaul": "^1.1.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
