@@ -3,7 +3,9 @@ import { ChevronDown, Clapperboard, RefreshCw, Search, SlidersHorizontal, Star }
 import { useTranslation } from "react-i18next";
 import { AnimePlayerModal } from "@/components/anime/AnimePlayerModal";
 import { AnimeTrackerPanel } from "@/components/anime/AnimeTrackerPanel";
+import { supabase } from "@/lib/supabase";
 import { fetchAnimePage } from "@/services/animeService";
+import { getProgress } from "@/services/watchProgressService";
 import type { Anime, AnimeEpisode } from "@/types/anime";
 
 const PAGE_SIZE = 24;
@@ -16,6 +18,7 @@ const filterOptions = {
 } as const;
 type FilterKey = keyof typeof filterOptions;
 type Filters = { [K in FilterKey]: (typeof filterOptions)[K][number] };
+interface PlayerState { anime: Anime; initialEpisodeIndex?: number; initialPositionSeconds?: number }
 const defaultFilters: Filters = { type: "all", region: "all", genre: "all", status: "all", year: "all" };
 const genreAliases: Record<Exclude<FilterKey, "type" | "year">, Record<string, string[]>> = {
   region: { japan: ["日本"], china: ["中国", "大陆", "中国大陆", "国产"], western: ["欧美", "美国", "英国", "法国", "德国", "加拿大", "西班牙", "意大利", "澳大利亚"], korea: ["韩国"], hongKongTaiwan: ["港台", "香港", "台湾", "中国香港", "中国台湾"], other: ["其他", "其它"] },
@@ -105,7 +108,7 @@ export function AnimePage() {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState<Anime | null>(null);
+  const [playing, setPlaying] = useState<PlayerState | null>(null);
   const requestSequence = useRef(0);
 
   const loadAnime = useCallback(async () => {
@@ -171,6 +174,25 @@ export function AnimePage() {
     setSearchQuery(nextQuery);
   };
 
+  const openTrackedAnime = useCallback(async (animeExternalId: string) => {
+    try {
+      const [{ data, error: animeError }, progress] = await Promise.all([
+        supabase.from("animes").select("*").eq("external_id", animeExternalId).maybeSingle(),
+        getProgress(animeExternalId),
+      ]);
+      if (animeError) throw new Error(animeError.message);
+      const trackedAnime = normalizeAnime(data);
+      if (!trackedAnime) throw new Error("Anime data is unavailable.");
+      setPlaying({
+        anime: trackedAnime,
+        initialEpisodeIndex: progress?.current_episode_index,
+        initialPositionSeconds: progress?.position_seconds,
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, []);
+
   return (
     <div className="dashboard-light-page mx-auto min-h-[calc(100vh-7rem)] max-w-[1600px] rounded-3xl bg-slate-50 p-4 text-slate-900 shadow-sm dark:bg-[#0B0E17] dark:text-slate-100 dark:shadow-2xl dark:shadow-black/20 sm:p-6 lg:p-8">
       <header className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-center">
@@ -200,7 +222,7 @@ export function AnimePage() {
         </label>
       </header>
 
-      <AnimeTrackerPanel />
+      <AnimeTrackerPanel onOpenPlayer={(animeExternalId) => void openTrackedAnime(animeExternalId)} />
 
       <section className="mb-7 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111622] dark:shadow-none" aria-label={t("anime.filters.title")}>
         <button type="button" onClick={() => setFiltersOpen(value => !value)} aria-expanded={filtersOpen} className="flex min-h-12 w-full items-center justify-between gap-3 px-4 text-left text-sm font-semibold text-slate-200 sm:px-5"><span className="flex items-center gap-2"><SlidersHorizontal size={17} className="text-violet-400"/>{t("anime.filters.title")}</span><ChevronDown size={17} className={`transition ${filtersOpen ? "rotate-180" : ""}`}/></button>
@@ -261,7 +283,7 @@ export function AnimePage() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setPlaying(item)}
+                    onClick={() => setPlaying({ anime: item })}
                     className="group min-w-0 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-sm ring-0 transition-all hover:-translate-y-0.5 hover:ring-2 hover:ring-indigo-500/50 hover:shadow-md dark:border-transparent dark:bg-transparent dark:p-0 dark:shadow-none"
                   >
                     <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-[#181F30] ring-1 ring-white/5">
@@ -316,7 +338,12 @@ export function AnimePage() {
         </>
       )}
       {playing && (
-        <AnimePlayerModal anime={playing} onClose={() => setPlaying(null)} />
+        <AnimePlayerModal
+          anime={playing.anime}
+          initialEpisodeIndex={playing.initialEpisodeIndex}
+          initialPositionSeconds={playing.initialPositionSeconds}
+          onClose={() => setPlaying(null)}
+        />
       )}
     </div>
   );

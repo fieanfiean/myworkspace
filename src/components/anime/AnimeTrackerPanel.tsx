@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CheckCircle2, ChevronDown, Clapperboard, LoaderCircle, Plus, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { deleteProgress, listCompleted, listWatching, markCompleted, markEpisodeWatched, upsertProgress, type WatchProgress } from '@/services/watchProgressService';
+import { deleteProgress, listProgress, markCompleted, markEpisodeWatched, upsertProgress, type WatchProgress, type WatchStatus } from '@/services/watchProgressService';
 
 type PanelStatus = 'watching' | 'completed';
 interface AnimeMetadata { external_id: string; title: string; cover_url: string | null; episode_count: number }
-interface TrackerItem { externalId: string; title: string; coverUrl: string | null; episodeCount: number; watchedEpisodes: number }
+interface TrackerItem { externalId: string; title: string; coverUrl: string | null; episodeCount: number; watchedEpisodes: number; status: WatchStatus }
+interface AnimeTrackerPanelProps { onOpenPlayer?: (animeExternalId: string) => void }
 
 async function joinAnimeMetadata(rows: WatchProgress[]): Promise<TrackerItem[]> {
   const externalIds = [...new Set(rows.map(row => row.anime_external_id))];
@@ -23,11 +24,12 @@ async function joinAnimeMetadata(rows: WatchProgress[]): Promise<TrackerItem[]> 
       coverUrl: metadata?.cover_url ?? row.anime_cover_url,
       episodeCount: Math.max(0, metadata?.episode_count ?? 0),
       watchedEpisodes: Math.max(0, row.watched_episodes),
+      status: row.status,
     };
   });
 }
 
-export function AnimeTrackerPanel() {
+export function AnimeTrackerPanel({ onOpenPlayer }: AnimeTrackerPanelProps) {
   const [status, setStatus] = useState<PanelStatus>('watching');
   const [items, setItems] = useState<TrackerItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,8 +41,10 @@ export function AnimeTrackerPanel() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const rows = status === 'watching' ? await listWatching() : await listCompleted();
-      setItems(await joinAnimeMetadata(rows));
+      const joinedItems = await joinAnimeMetadata(await listProgress());
+      setItems(joinedItems.filter(item => status === 'watching'
+        ? item.status === 'watching' && (item.episodeCount === 0 || item.watchedEpisodes < item.episodeCount)
+        : item.status === 'completed' || (item.episodeCount > 0 && item.watchedEpisodes >= item.episodeCount)));
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setLoading(false); }
   }, [status]);
@@ -77,9 +81,9 @@ export function AnimeTrackerPanel() {
         {items.map(item => {
           const watched = Math.min(item.watchedEpisodes, item.episodeCount || item.watchedEpisodes);
           const progress = item.episodeCount > 0 ? Math.min(100, watched / item.episodeCount * 100) : 0;
-          return <article key={item.externalId} className="flex min-w-0 gap-4 rounded-2xl border border-slate-200/80 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-950/30">
+          return <article key={item.externalId} onClick={() => onOpenPlayer?.(item.externalId)} className={`flex min-w-0 gap-4 rounded-2xl border border-slate-200/80 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-950/30 ${onOpenPlayer ? 'cursor-pointer' : ''}`}>
             <div className="h-28 w-20 shrink-0 overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">{item.coverUrl ? <img src={item.coverUrl} alt="" className="size-full object-cover" /> : <span className="flex size-full items-center justify-center text-indigo-400"><Clapperboard size={25} /></span>}</div>
-            <div className="flex min-w-0 flex-1 flex-col justify-center"><h3 className="truncate font-semibold text-slate-900 dark:text-white" title={item.title}>{item.title}</h3><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">第 {watched} / {item.episodeCount} 集</p><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-label={`观看进度 ${Math.round(progress)}%`}><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-[width] duration-300" style={{ width: `${progress}%` }} /></div>{status === 'watching' ? <button type="button" disabled={updatingId === item.externalId || item.episodeCount === 0} onClick={() => void addEpisode(item)} className="mt-3 inline-flex min-h-9 items-center justify-center gap-1.5 self-start rounded-lg bg-indigo-500/15 px-3 text-xs font-bold text-indigo-600 transition hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300">{updatingId === item.externalId ? <LoaderCircle className="animate-spin" size={14} /> : <Plus size={14} />}+1 集</button> : <span className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={14} />已看完</span>}</div>
+            <div className="flex min-w-0 flex-1 flex-col justify-center"><h3 className="truncate font-semibold text-slate-900 dark:text-white" title={item.title}>{item.title}</h3><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">第 {watched} / {item.episodeCount} 集</p><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-label={`观看进度 ${Math.round(progress)}%`}><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-[width] duration-300" style={{ width: `${progress}%` }} /></div>{status === 'watching' ? <button type="button" disabled={updatingId === item.externalId || item.episodeCount === 0} onClick={(event) => { event.stopPropagation(); void addEpisode(item); }} className="mt-3 inline-flex min-h-9 items-center justify-center gap-1.5 self-start rounded-lg bg-indigo-500/15 px-3 text-xs font-bold text-indigo-600 transition hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300">{updatingId === item.externalId ? <LoaderCircle className="animate-spin" size={14} /> : <Plus size={14} />}+1 集</button> : <span className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={14} />已看完</span>}</div>
           </article>;
         })}
       </div>}

@@ -108,12 +108,20 @@ export async function markEpisodeWatched(animeExternalId: string, episodeIndex: 
   if (!userId) return;
   const existing = await getProgressForUser(userId, animeExternalId);
   const watchedEpisodes = Math.max(existing?.watched_episodes ?? 0, Math.max(0, Math.floor(episodeIndex)) + 1);
+  const { data: anime, error: animeError } = await supabase.from('animes')
+    .select('episode_count')
+    .eq('external_id', animeExternalId)
+    .maybeSingle();
+  if (animeError) throw new Error(animeError.message);
+  const episodeCount = Number(anime?.episode_count) || 0;
+  const status: WatchStatus = episodeCount > 0 && watchedEpisodes >= episodeCount ? 'completed' : 'watching';
   if (!existing) {
     const { error } = await supabase.from('anime_watch_progress').insert({
       user_id: userId,
       anime_external_id: animeExternalId,
       current_episode_index: Math.max(0, Math.floor(episodeIndex)),
       watched_episodes: watchedEpisodes,
+      status,
       last_watched_at: new Date().toISOString(),
     });
     if (error) throw new Error(error.message);
@@ -121,6 +129,7 @@ export async function markEpisodeWatched(animeExternalId: string, episodeIndex: 
   }
   const { error } = await supabase.from('anime_watch_progress').update({
     watched_episodes: watchedEpisodes,
+    status,
     last_watched_at: new Date().toISOString(),
   }).eq('user_id', userId).eq('anime_external_id', animeExternalId);
   if (error) throw new Error(error.message);
