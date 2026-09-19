@@ -15,7 +15,7 @@ concurrency:
 jobs:
   sync-anime:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
@@ -31,7 +31,7 @@ jobs:
         run: npm ci
 
       - name: Sync latest anime pages
-        run: npm run sync:anime -- --all
+        run: npm run sync:anime -- --all --skip-processed
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
