@@ -22,7 +22,7 @@ interface AnimeRow {
 }
 type AnimeDbRow = Omit<AnimeRow, 'episodes'> & { episode_count: number };
 interface UpsertResult { written: number; inserted: number; updated: number }
-interface SyncOptions { source: string; startPage: number; pages: number; pagesProvided: boolean; batchSize: number; all: boolean; delayMs: number; typeIds: Array<string | undefined> }
+interface SyncOptions { source: string; startPage: number; pages: number; pagesProvided: boolean; batchSize: number; all: boolean; skipProcessed: boolean; delayMs: number; typeIds: Array<string | undefined> }
 
 const DEFAULT_SOURCE = 'https://ffzy5.tv/api.php/provide/vod/?ac=detail';
 const ALL_TYPE_IDS = [
@@ -57,7 +57,7 @@ function positiveInteger(value: string | undefined, fallback: number, flag: stri
 
 function parseOptions(args: string[]): SyncOptions {
   if (args.includes('--help')) {
-    console.log('Usage: npm run sync:anime -- [--all] [--source URL] [--type 4,29,30] [--start-page N] [--pages N] [--batch-size N] [--delay MS]');
+    console.log('Usage: npm run sync:anime -- [--all] [--skip-processed] [--source URL] [--type 4,29,30] [--start-page N] [--pages N] [--batch-size N] [--delay MS]');
     process.exit(0);
   }
   const source = optionValue(args, '--source') || DEFAULT_SOURCE;
@@ -74,6 +74,7 @@ function parseOptions(args: string[]): SyncOptions {
     pagesProvided: pagesValue !== undefined,
     batchSize: positiveInteger(optionValue(args, '--batch-size'), 100, '--batch-size'),
     all,
+    skipProcessed: args.includes('--skip-processed'),
     delayMs: positiveInteger(optionValue(args, '--delay'), 300, '--delay'),
     typeIds: [...new Set(typeIds)],
   };
@@ -286,13 +287,36 @@ async function main(): Promise<void> {
       const rows = (payload.list ?? []).map(vod => normalizeVod(vod, sourceSite, syncStartedAt));
       const validRows = rows.filter((row): row is AnimeRow => row !== null);
       skipped += rows.length - validRows.length;
+      let pageProcessedSkipped = 0;
+      let pageWritten = 0;
 
       for (let index = 0; index < validRows.length; index += options.batchSize) {
         const batch = validRows.slice(index, index + options.batchSize);
+        let pendingBatch = batch;
+
+        if (options.skipProcessed && batch.length > 0) {
+          const externalIds = [...new Set(batch.map(item => item.external_id))];
+          const { data: processedRows, error: processedLookupError } = await supabase
+            .from('animes')
+            .select('external_id')
+            .in('external_id', externalIds)
+            .gt('episode_count', 0);
+          if (processedLookupError) {
+            throw new Error(`Processed-anime lookup failed: ${processedLookupError.message}`);
+          }
+
+          const processedIds = new Set((processedRows ?? []).map(row => String(row.external_id)));
+          pendingBatch = batch.filter(item => !processedIds.has(item.external_id));
+          const processedSkipped = batch.length - pendingBatch.length;
+          pageProcessedSkipped += processedSkipped;
+          skipped += processedSkipped;
+        }
+
+        if (pendingBatch.length === 0) continue;
 
         // ================= 2. 并行上传完整详情 JSON 到 Cloudflare R2 =================
         await Promise.all(
-          batch.map(async (row) => {
+          pendingBatch.map(async (row) => {
             const detailPayload = {
               external_id: row.external_id,
               title: row.title,
@@ -310,7 +334,7 @@ async function main(): Promise<void> {
         );
 
         // ================= 3. 剔除 episodes 巨型字段，瘦身数据库行 =================
-        const dbBatch = batch.map((item) => {
+        const dbBatch = pendingBatch.map((item) => {
           const { episodes, ...rest } = item;
           return { ...rest, episode_count: episodes.length };
         });
@@ -321,10 +345,11 @@ async function main(): Promise<void> {
           imported += result.written;
           inserted += result.inserted;
           updated += result.updated;
+          pageWritten += result.written;
         }
         else skipped += dbBatch.length;
       }
-      console.log(`[Page ${processedPages}/${totalPages}] Processed ${validRows.length} items (R2 JSON + Supabase Index). Cumulative total: ${imported} / ${remoteTotal}. Skipped: ${rows.length - validRows.length}.`);
+      console.log(`[Page ${processedPages}/${totalPages}] Processed ${validRows.length} items (${pageProcessedSkipped} skipped as processed, ${pageWritten} written)`);
       await delay(300);
     }
   }
