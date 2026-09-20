@@ -10,6 +10,8 @@ import { Layout } from './components/layout/Layout';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import { LoginPage } from './pages/LoginPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { ThemeProvider } from './context/ThemeContext';
 import type { Tab } from './components/layout/Sidebar';
 
@@ -31,6 +33,7 @@ function AuthenticatedApp() {
   const [resumeExportToken, setResumeExportToken] = useState(0);
   const touch = useRef({ startX: 0, startY: 0, currentX: 0, currentY: 0, blocked: false, drawer: null as 'left' | 'right' | null });
   const { user, loading } = useAuth();
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(isSidebarCollapsed));
@@ -94,6 +97,9 @@ function AuthenticatedApp() {
     };
   }, [isMobileSidebarOpen, isMobileToolsOpen]);
 
+  if (pathname === '/forgot-password') return <ForgotPasswordPage />;
+  if (pathname === '/reset-password') return <ResetPasswordPage />;
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-600 dark:bg-slate-950 dark:text-slate-400">
@@ -102,7 +108,7 @@ function AuthenticatedApp() {
     );
   }
 
-  if (!user) return <LoginPage />;
+  if (!user || pathname === '/login') return <LoginPage />;
 
   const changeTab = (tab: Tab) => {
     setActiveTab(tab);

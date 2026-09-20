@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { BarChart3, ChevronUp, Clapperboard, LayoutDashboard, LoaderCircle, LogOut, PanelLeftClose, PanelLeftOpen, User, Wallet, X } from 'lucide-react';
+import { BarChart3, ChevronUp, Clapperboard, KeyRound, LayoutDashboard, LoaderCircle, LogOut, PanelLeftClose, PanelLeftOpen, User, Wallet, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { ChangePasswordModal } from '@/components/account/ChangePasswordModal';
 import { useAuth } from '@/hooks/useAuth';
 import { getProfileSummary } from '@/services/profileService';
 import type { Profile } from '@/types/profile';
@@ -45,12 +46,14 @@ function NavItem({ active, collapsed, icon: Icon, label, onClick }: NavItemProps
 export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobileOpen, onMobileClose }: SidebarProps) {
   const { t } = useTranslation();
   const { user, signOut } = useAuth();
-  const [profile, setProfile] = useState<Pick<Profile, 'full_name' | 'avatar_url'> | null>(null);
+  const [profile, setProfile] = useState<Pick<Profile, 'nickname' | 'avatar_url'> | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [accountModal, setAccountModal] = useState<'password' | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const accountRef = useRef<HTMLDivElement>(null);
-  const displayName = profile?.full_name || user?.email?.split('@')[0] || t('account.user');
+  const displayName = profile?.nickname || user?.email || t('account.user');
   const accountInitials = displayName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || '?';
 
   useEffect(() => {
@@ -71,6 +74,12 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
     document.addEventListener('mousedown', closeOutside);
     return () => document.removeEventListener('mousedown', closeOutside);
   }, [accountOpen]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const handleSignOut = async () => {
     setSigningOut(true); setSignOutError(null);
@@ -110,6 +119,7 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
         {accountOpen && <div className={`absolute bottom-full mb-3 rounded-xl border border-slate-700 bg-slate-800 p-2 shadow-2xl ${isCollapsed ? 'left-0 w-64' : 'inset-x-0'}`}>
           <div className="border-b border-slate-700 px-3 py-2"><p className="truncate text-sm font-medium text-white">{displayName}</p><p className="truncate text-xs text-slate-400">{user?.email}</p></div>
           {signOutError && <p role="alert" className="px-3 py-2 text-xs text-red-400">{signOutError}</p>}
+          <button type="button" onClick={() => { setAccountOpen(false); setAccountModal('password'); }} className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-700 hover:text-white"><KeyRound size={17} /><span>{t('account.changePassword')}</span></button>
           <button type="button" disabled={signingOut} onClick={() => void handleSignOut()} className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:opacity-60">{signingOut ? <LoaderCircle className="animate-spin" size={17} /> : <LogOut size={17} />}<span>{signingOut ? t('account.signingOut') : t('account.logout')}</span></button>
         </div>}
         <button type="button" onClick={() => setAccountOpen(open => !open)} aria-expanded={accountOpen} aria-label={t('account.manage')} className={`flex w-full items-center rounded-xl border border-slate-700 bg-slate-800 py-2 text-slate-300 transition hover:bg-slate-700 ${isCollapsed ? 'gap-3 px-2 md:justify-center md:px-1' : 'gap-3 px-2'}`}>
@@ -118,5 +128,7 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
         </button>
       </div>
     </aside>
+    {accountModal === 'password' && <ChangePasswordModal onClose={() => setAccountModal(null)} onSuccess={() => { setAccountModal(null); setToast(t('account.passwordUpdated')); }} />}
+    {toast && <div role="status" className="fixed bottom-6 right-6 z-[120] max-w-sm rounded-xl border border-emerald-700 bg-emerald-950/95 px-4 py-3 text-sm font-medium text-emerald-200 shadow-2xl backdrop-blur">{toast}</div>}
   </>);
 }

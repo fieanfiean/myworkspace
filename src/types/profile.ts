@@ -6,5 +6,5 @@ export interface SkillCategory { id: string; title: string; color: string; skill
 export type AchievementCategory = 'project' | 'award' | 'certificate' | 'certification';
 export interface Achievement { id: string; category: AchievementCategory; title: string; year: string; tag: string; rank: string; description: string; imageUrl: string }
 export interface ProfileInfo { name: string; title: string; organization: string; location: string; email: string; website: string; stats: { label: string; value: string }[] }
-export interface Profile { id: string; full_name: string; headline: string; company: string; location: string; email: string; website: string; avatar_url: string }
+export interface Profile { id: string; full_name: string; nickname: string; headline: string; company: string; location: string; email: string; website: string; avatar_url: string }
 export interface AboutMeData { experiences: Experience[]; educations: EducationItem[]; skillCategories: SkillCategory[]; achievements: Achievement[] }

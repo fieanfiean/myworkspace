@@ -15,9 +15,9 @@ export async function getProfile(profileId: string): Promise<Profile | null> {
 }
 
 export async function getProfileSummary(profileId: string) {
-  const { data, error } = await supabase.from('profiles').select('full_name, headline, avatar_url').eq('id', profileId).maybeSingle();
+  const { data, error } = await supabase.from('profiles').select('full_name, nickname, headline, avatar_url').eq('id', profileId).maybeSingle();
   throwIfError(error);
-  return data as Pick<Profile, 'full_name' | 'headline' | 'avatar_url'> | null;
+  return data as Pick<Profile, 'full_name' | 'nickname' | 'headline' | 'avatar_url'> | null;
 }
 
 export async function saveProfile(profile: Profile): Promise<Profile> {

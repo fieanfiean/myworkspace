@@ -110,6 +110,7 @@ export function AnimePage() {
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<PlayerState | null>(null);
   const requestSequence = useRef(0);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
 
   const loadAnime = useCallback(async () => {
     const requestId = ++requestSequence.current;
@@ -145,6 +146,18 @@ export function AnimePage() {
   useEffect(() => {
     queueMicrotask(() => void loadAnime());
   }, [loadAnime]);
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || !hasMore || loading || loadingMore) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      observer.disconnect();
+      setPage(current => current + 1);
+    }, { rootMargin: "0px 0px 200px 0px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -322,18 +335,7 @@ export function AnimePage() {
                 {t("anime.empty")}
               </div>
             )}
-            {hasMore && (
-              <div className="mt-8 flex justify-center">
-                <button
-                  type="button"
-                  disabled={loadingMore}
-                  onClick={() => setPage((current) => current + 1)}
-                  className="flex min-h-12 items-center justify-center rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-6 text-sm font-bold text-indigo-300 transition hover:bg-indigo-500/20 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {loadingMore ? t("anime.loadingMore") : t("anime.loadMore")}
-                </button>
-              </div>
-            )}
+            {hasMore && <div ref={loadMoreSentinelRef} className={loadingMore ? "mt-8 flex min-h-12 items-center justify-center text-sm font-semibold text-indigo-300" : "h-1"} role={loadingMore ? "status" : undefined}>{loadingMore ? t("anime.loadingMore") : null}</div>}
           </section>
         </>
       )}

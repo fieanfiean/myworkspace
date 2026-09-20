@@ -35,7 +35,7 @@ function ResumeDocument({ data: sourceData, payload, selected, kind }: { data: A
   return (
     <article style={{ width: 794, minHeight: 1123, height: compact ? 1123 : undefined, overflow: compact ? 'hidden' : 'visible', boxSizing: 'border-box', background: '#fff', color: '#334155', padding: compact ? '35px 45px' : '54px 60px', fontFamily: 'Arial, sans-serif', fontSize: compact ? 10 : 12, lineHeight: compact ? 1.3 : 1.5 }}>
       <header style={{ paddingBottom: compact ? 12 : 22, borderBottom: '3px solid #2563eb' }}>
-        <h1 style={{ margin: 0, color: '#0f172a', fontSize: compact ? 25 : 32, lineHeight: 1.15 }}>{profile.full_name}</h1>
+        <h1 style={{ margin: 0, color: '#0f172a', fontSize: compact ? 25 : 32, lineHeight: 1.15 }}>{profile.full_name || profile.nickname || profile.email}</h1>
         <p style={{ margin: '7px 0 10px', color: '#2563eb', fontSize: 16, fontWeight: 600 }}>{[profile.headline, profile.company].filter(Boolean).join(' · ')}</p>
         <p style={{ margin: 0, color: '#64748b' }}>{[profile.location, profile.email, profile.website].filter(Boolean).join('  •  ')}</p>
       </header>
@@ -83,7 +83,7 @@ export function ExportPanel({ data, autoResumeToken = 0 }: ExportPanelProps) {
       setExportSelection(selectedSnapshot);
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       if (!documentRef.current) throw new Error('The document could not be prepared.');
-      const safeName = (profile.full_name || 'resume').trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+      const safeName = (profile.full_name || profile.nickname || profile.email || 'resume').trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
       const pdfOptions = {
         margin: 0, filename: `${safeName || 'resume'}-${kind}.pdf`, image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },

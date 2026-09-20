@@ -19,6 +19,7 @@ export function LoginPage() {
     if (mode === 'signIn') {
       const { error: authError } = await authService.signInWithPassword(email, password);
       if (authError) setError(authError.message);
+      else if (window.location.pathname === '/login') window.location.replace('/');
     } else {
       const { data, error: authError } = await authService.signUp(email, password);
       if (authError) {
@@ -107,6 +108,8 @@ export function LoginPage() {
               />
             </div>
           </label>
+
+          {mode === 'signIn' && <div className="-mt-2 text-right"><a href="/forgot-password" className="text-sm font-semibold text-blue-400 transition hover:text-blue-300">Forgot password?</a></div>}
 
           {error && (
             <p role="alert" className="rounded-xl border border-red-800 bg-red-950/50 p-3 text-sm text-red-300">

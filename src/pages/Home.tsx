@@ -76,7 +76,7 @@ export function Home({ onNavigate }: HomeProps) {
   const { user } = useAuth();
   const { transactions, loading: budgetLoading } = useBudgetTransactions(user?.id);
   const { data: profileData } = useProfileData(user?.id ?? 'default', initialAboutMeData);
-  const [profile, setProfile] = useState<{ full_name: string; headline: string } | null>(null);
+  const [profile, setProfile] = useState<{ nickname: string; headline: string } | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [continueWatching, setContinueWatching] = useState<StoredAnimeProgress | null>(() => latestAnimeProgress());
   const [playingAnime, setPlayingAnime] = useState<Anime | null>(null);
@@ -134,7 +134,7 @@ export function Home({ onNavigate }: HomeProps) {
 
   const currency = useMemo(() => new Intl.NumberFormat(locale, { style: 'currency', currency: 'MYR', maximumFractionDigits: 0 }), [locale]);
   const skills = profileData.skillCategories.flatMap(category => category.skills.map(skill => skill.name)).slice(0, 6);
-  const displayName = profile?.full_name || user?.email?.split('@')[0] || t('home.user');
+  const displayName = profile?.nickname || user?.email || t('home.user');
   const stocks = ['AAPL', 'NVDA'].map(ticker => mockStocks[ticker]);
 
   const resumeAnime = () => {
