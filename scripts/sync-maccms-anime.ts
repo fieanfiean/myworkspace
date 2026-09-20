@@ -66,7 +66,7 @@ function parseOptions(args: string[]): SyncOptions {
   const sourceTypeId = new URL(source).searchParams.get('t') ?? undefined;
   const all = args.includes('--all');
   const pagesValue = optionValue(args, '--pages');
-  const typeIds = explicitTypeIds.length > 0 ? explicitTypeIds : all && sourceTypeId === '4' ? ALL_TYPE_IDS : [sourceTypeId];
+  const typeIds = explicitTypeIds.length > 0 ? explicitTypeIds : all ? ALL_TYPE_IDS : [sourceTypeId];
   return {
     source,
     startPage: positiveInteger(optionValue(args, '--start-page'), 1, '--start-page'),
