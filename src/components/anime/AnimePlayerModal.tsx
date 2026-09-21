@@ -4,6 +4,7 @@ import { Drawer } from "vaul";
 import { Keyboard, ListVideo, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Anime, AnimeEpisode } from "@/types/anime";
+import { getAnimeSources } from "@/services/animeService";
 import { getProgress } from "@/services/watchProgressService";
 import { useWatchProgress } from "@/hooks/useWatchProgress";
 
@@ -32,6 +33,10 @@ interface PlaybackProgress {
 const EPISODES_PER_RANGE = 25;
 const PROGRESS_STORAGE_PREFIX = "anime_progress_";
 const PROGRESS_SAVE_INTERVAL_SECONDS = 5;
+
+function animeSourceKey(anime: Anime): string {
+  return `${anime.source || "ffzy5"}:${anime.external_id || anime.id}`;
+}
 
 function readProgress(key: string): PlaybackProgress | null {
   try {
@@ -73,6 +78,9 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
   const { t } = useTranslation();
 
   const [episodes, setEpisodes] = useState<AnimeEpisode[]>([]);
+  const [sources, setSources] = useState<Anime[]>([anime]);
+  const [activeSource, setActiveSource] = useState<Anime>(anime);
+  const [unavailableSources, setUnavailableSources] = useState<Set<string>>(() => new Set());
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -85,6 +93,7 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
   const videoRef = useRef<HTMLVideoElement>(null);
   const playingIndexRef = useRef(0);
   const resumeTimeRef = useRef(0);
+  const sourceResumeRef = useRef<{ episodeIndex: number; positionSeconds: number } | null>(null);
   const lastSavedSecondRef = useRef(-PROGRESS_SAVE_INTERVAL_SECONDS);
   const rangeTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedEpisode = episodes[selectedIndex];
@@ -143,10 +152,45 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
     onClose();
   }, [flush, onClose, saveProgress]);
 
+  useEffect(() => {
+    let isMounted = true;
+    queueMicrotask(() => {
+      if (!isMounted) return;
+      setSources([anime]);
+      setActiveSource(anime);
+      setUnavailableSources(new Set());
+    });
+    void getAnimeSources(anime.title)
+      .then((items) => {
+        if (!isMounted || items.length === 0) return;
+        setSources(items);
+        setActiveSource((current) => animeSourceKey(current) === animeSourceKey(items[0]) ? current : items[0]);
+      })
+      .catch(() => {
+        // The initially selected row remains playable if source discovery fails.
+      });
+    return () => { isMounted = false; };
+  }, [anime]);
+
+  const switchSource = useCallback((sourceKey: string) => {
+    const nextSource = sources.find((item) => animeSourceKey(item) === sourceKey);
+    if (!nextSource || animeSourceKey(nextSource) === animeSourceKey(activeSource)) return;
+    const currentPosition = videoRef.current?.currentTime;
+    sourceResumeRef.current = {
+      episodeIndex: selectedIndex,
+      positionSeconds: Number.isFinite(currentPosition) ? Math.max(0, currentPosition ?? 0) : playbackSnapshot.positionSeconds,
+    };
+    saveProgress();
+    void flush();
+    setPlayerError(null);
+    setActiveSource(nextSource);
+  }, [activeSource, flush, playbackSnapshot.positionSeconds, saveProgress, selectedIndex, sources]);
+
   // 1. 从 Cloudflare R2 拉取完整 JSON 详情
   useEffect(() => {
-    const id = animeId;
+    const id = activeSource.external_id || activeSource.id;
     if (!id) return;
+    const currentSourceKey = animeSourceKey(activeSource);
 
     let isMounted = true;
 
@@ -154,9 +198,7 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
       if (isMounted) {
         setLoadingDetail(true);
         setDetailError(null);
-        setSelectedIndex(0); // 重置剧集选中索引
-        setSelectedRange(0);
-        resumeTimeRef.current = 0;
+        setEpisodes([]);
       }
     });
 
@@ -168,7 +210,7 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
       : Promise.resolve(null);
 
     Promise.all([
-      fetch(`${r2PublicUrl}/anime-details/${id}.json`).then((res) => {
+      fetch(`${r2PublicUrl}/anime-details/${encodeURIComponent(activeSource.source || "ffzy5")}/${encodeURIComponent(id)}.json`).then((res) => {
         if (!res.ok) throw new Error("Failed to fetch anime details from R2");
         return res.json() as Promise<AnimeDetailResponse>;
       }),
@@ -181,6 +223,23 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
           .filter((item): item is AnimeEpisode => item.url !== null);
 
         setEpisodes(safeEpisodes);
+        setUnavailableSources((current) => {
+          if (!current.has(currentSourceKey)) return current;
+          const next = new Set(current);
+          next.delete(currentSourceKey);
+          return next;
+        });
+        const sourceResume = sourceResumeRef.current;
+        sourceResumeRef.current = null;
+        if (sourceResume && safeEpisodes.length > 0) {
+          const restoredIndex = Math.min(Math.max(0, sourceResume.episodeIndex), safeEpisodes.length - 1);
+          resumeTimeRef.current = sourceResume.positionSeconds;
+          lastSavedSecondRef.current = Math.floor(sourceResume.positionSeconds);
+          setSelectedIndex(restoredIndex);
+          setSelectedRange(Math.floor(restoredIndex / EPISODES_PER_RANGE));
+          setPlaybackSnapshot((current) => ({ ...current, positionSeconds: sourceResume.positionSeconds }));
+          return;
+        }
         const localTimestamp = localSaved?.updatedAt ? Date.parse(localSaved.updatedAt) : Number.NEGATIVE_INFINITY;
         const remoteTimestamp = remoteSaved?.last_watched_at ? Date.parse(remoteSaved.last_watched_at) : Number.NEGATIVE_INFINITY;
         const remoteIsNewer = Boolean(remoteSaved) && remoteTimestamp > localTimestamp;
@@ -210,11 +269,18 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
           setSelectedIndex(restoredIndex);
           setSelectedRange(Math.floor(restoredIndex / EPISODES_PER_RANGE));
           setPlaybackSnapshot({ positionSeconds: restoredTime, durationSeconds: 0 });
+        } else {
+          resumeTimeRef.current = 0;
+          setSelectedIndex(0);
+          setSelectedRange(0);
+          setPlaybackSnapshot({ positionSeconds: 0, durationSeconds: 0 });
         }
       })
       .catch((err) => {
         if (!isMounted) return;
         console.error("Fetch R2 anime detail error:", err);
+        setEpisodes([]);
+        setUnavailableSources((current) => new Set(current).add(currentSourceKey));
         setDetailError("anime.player.loadFailed");
       })
       .finally(() => {
@@ -224,7 +290,7 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
     return () => {
       isMounted = false;
     };
-  }, [anime.external_id, animeId, initialEpisodeIndex, initialPositionSeconds, progressStorageKey]);
+  }, [activeSource, anime.external_id, initialEpisodeIndex, initialPositionSeconds, progressStorageKey]);
 
   useEffect(() => {
     rangeTabRefs.current[selectedRange]?.scrollIntoView({
@@ -331,12 +397,20 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
 
         hlsInstance.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
           if (!isMounted) return;
+          setUnavailableSources((current) => {
+            const key = animeSourceKey(activeSource);
+            if (!current.has(key)) return current;
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          });
           setPlayerLoading(false);
           void video.play().catch(() => undefined);
         });
 
         hlsInstance.on(HlsPlayer.Events.ERROR, (_event, data) => {
           if (!data.fatal || !hlsInstance || !isMounted) return;
+          setUnavailableSources((current) => new Set(current).add(animeSourceKey(activeSource)));
           if (data.type === HlsPlayer.ErrorTypes.NETWORK_ERROR) {
             hlsInstance.startLoad();
           } else if (data.type === HlsPlayer.ErrorTypes.MEDIA_ERROR) {
@@ -362,7 +436,7 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
       video.removeAttribute("src");
       video.load();
     };
-  }, [selectedEpisode, selectedIndex]);
+  }, [activeSource, selectedEpisode, selectedIndex]);
 
   return (
     <div
@@ -396,6 +470,20 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
                 : t("anime.player.noEpisodes")}
             </p>
           </div>
+          <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-400">
+            <span className="hidden sm:inline">{t("animePlaybackSource")}</span>
+            <select
+              value={animeSourceKey(activeSource)}
+              onChange={(event) => switchSource(event.target.value)}
+              aria-label={t("animePlaybackSource")}
+              className="min-h-10 max-w-36 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+            >
+              {sources.map((item) => {
+                const key = animeSourceKey(item);
+                return <option key={key} value={key}>{item.source || "ffzy5"}{unavailableSources.has(key) ? ` ${t("animeSourceUnavailable")}` : ""}</option>;
+              })}
+            </select>
+          </label>
           <button
             type="button"
             onClick={handleClose}
@@ -438,6 +526,7 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
                 onPause={() => { saveProgress(); void flush(); }}
                 onEnded={() => { saveProgress(); void flush(); }}
                 onError={() => {
+                  setUnavailableSources((current) => new Set(current).add(animeSourceKey(activeSource)));
                   setPlayerError("anime.player.loadFailed");
                   setPlayerLoading(false);
                 }}

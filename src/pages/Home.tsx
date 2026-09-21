@@ -44,6 +44,7 @@ function progressToHomeItem(progress: WatchProgress): StoredAnimeProgress {
   const anime: Anime = {
     id: progress.anime_external_id,
     external_id: progress.anime_external_id,
+    source: 'ffzy5',
     title: progress.anime_title ?? progress.anime_external_id,
     cover_url: progress.anime_cover_url,
     description: null,

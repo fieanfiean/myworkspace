@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { Anime } from '@/types/anime';
 
 export interface AnimeQueryFilters {
   search: string;
@@ -9,7 +10,7 @@ export interface AnimeQueryFilters {
   year: string;
 }
 
-const animeColumns = 'id,external_id,title,cover_url,description,rating,year,genres,episodes,episode_count,watched_episodes,status,region_category,area,release_date,source_site,updated_at';
+const animeColumns = 'id,external_id,source,title,cover_url,description,rating,year,genres,episodes,episode_count,watched_episodes,status,region_category,area,release_date,source_site,updated_at';
 
 export interface TrackedAnime {
   id: string;
@@ -82,4 +83,13 @@ export async function fetchAnimePage(filters: AnimeQueryFilters, page: number, p
   const { data, error, count } = await request.range(from, from + pageSize - 1);
   if (error) throw new Error(error.message);
   return { rows: data ?? [], total: count ?? 0, from };
+}
+
+export async function getAnimeSources(title: string): Promise<Anime[]> {
+  const { data, error } = await supabase.from('animes')
+    .select('*')
+    .eq('title', title)
+    .order('source', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Anime[];
 }

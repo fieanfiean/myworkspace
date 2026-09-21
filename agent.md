@@ -109,6 +109,7 @@
 
 ### E. Anime Stream
 
+- Anime catalog records support multiple providers through the composite `(external_id, source)` key. Syncs write details to `anime-details/{source}/{external_id}.json`; the player discovers same-title sources, defaults to the first source, marks failed sources unavailable, and preserves episode/time when switching.
 - Anime player episodes are grouped into horizontally scrollable 25-episode range tabs; the active range and playing episode are highlighted, and the mobile episode grid uses native momentum vertical scrolling with four to five columns.
 - Anime index rows keep a lightweight `episode_count` alongside R2-hosted episode URLs. Ongoing cards display `Updated to EP N` / `更新至第 N 集`; migration `20260918_add_anime_episode_count.sql` backfills any legacy inline episode arrays, and each sync refreshes the count.
 - The desktop player uses an indigo ambient glow; below `lg`, episode selection moves into a Vaul bottom drawer with drag-to-dismiss behavior and safe-area padding.

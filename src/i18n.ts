@@ -7,6 +7,8 @@ const resources = {
     brandName: 'Ziwei Enclosure · 紫微垣',
     theme: { switchToLight: 'Switch to light mode', switchToDark: 'Switch to dark mode' },
     animePlayerShortcuts: 'Space Play/Pause · ←/→ Seek 5s · ↑/↓ Volume · F Fullscreen · N/P Episode',
+    animePlaybackSource: 'Playback source',
+    animeSourceUnavailable: '(Unavailable)',
     bottomNav: { label: 'Mobile navigation', home: 'Home', stock: 'Stock' },
     command: { title: 'Command palette', description: 'Search pages and actions', placeholder: 'Search pages or actions…', empty: 'No matching commands.', hint: 'Enter to select · Esc to close', items: { home: 'Go to Home', homeHint: 'Open your dashboard', profile: 'View Profile', profileHint: 'Open profile and resume tools', budget: 'Open Budget', budgetHint: 'View transactions and insights', add: 'Add a transaction', addHint: 'Open the manual transaction form', scan: 'Scan receipt OCR', scanHint: 'Open receipt capture tools', anime: 'Watch Anime', animeHint: 'Browse and continue watching', stocks: 'View Stocks', stocksHint: 'Open stock analysis' } },
     home: {
@@ -47,6 +49,8 @@ const resources = {
   zh: { translation: {
     brandName: '紫微垣',
     animePlayerShortcuts: '空格 播放/暂停 · ←/→ 快退快进5秒 · ↑/↓ 音量 · F 全屏 · N/P 切集',
+    animePlaybackSource: '播放源',
+    animeSourceUnavailable: '（不可用）',
     bottomNav: { label: '移动端导航', home: '首页', stock: '股票' },
     command: { title: '快捷命令', description: '搜索页面和操作', placeholder: '搜索页面或操作……', empty: '没有符合的命令。', hint: 'Enter 选择 · Esc 关闭', items: { home: '前往首页', homeHint: '打开综合仪表盘', profile: '查看履历', profileHint: '打开个人资料与 Resume 工具', budget: '打开预算管理', budgetHint: '查看交易和财务分析', add: '记一笔账', addHint: '打开手动记账表单', scan: '扫描收据 OCR', scanHint: '打开收据识别工具', anime: '看动漫', animeHint: '浏览动漫或继续观看', stocks: '查看股票', stocksHint: '打开股票分析' } },
     home: {

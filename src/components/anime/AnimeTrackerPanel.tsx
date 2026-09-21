@@ -12,9 +12,11 @@ async function joinAnimeMetadata(rows: WatchProgress[]): Promise<TrackerItem[]> 
   const externalIds = [...new Set(rows.map(row => row.anime_external_id))];
   const metadataById = new Map<string, AnimeMetadata>();
   if (externalIds.length > 0) {
-    const { data, error } = await supabase.from('animes').select('external_id,title,cover_url,episode_count').in('external_id', externalIds);
+    const { data, error } = await supabase.from('animes').select('external_id,title,cover_url,episode_count,source').in('external_id', externalIds).order('source', { ascending: true });
     if (error) throw new Error(error.message);
-    (data as AnimeMetadata[] | null)?.forEach(item => metadataById.set(item.external_id, item));
+    (data as AnimeMetadata[] | null)?.forEach(item => {
+      if (!metadataById.has(item.external_id)) metadataById.set(item.external_id, item);
+    });
   }
   return rows.map(row => {
     const metadata = metadataById.get(row.anime_external_id);

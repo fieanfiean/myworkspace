@@ -50,6 +50,7 @@ function normalizeAnime(value: unknown): Anime | null {
   return {
     id: row.id,
     external_id: typeof row.external_id === "string" ? row.external_id : row.id,
+    source: typeof row.source === "string" ? row.source : "ffzy5",
     title: row.title,
     cover_url:
       typeof row.cover_url === "string"
@@ -189,10 +190,14 @@ export function AnimePage() {
 
   const openTrackedAnime = useCallback(async (animeExternalId: string) => {
     try {
-      const [{ data, error: animeError }, progress] = await Promise.all([
-        supabase.from("animes").select("*").eq("external_id", animeExternalId).maybeSingle(),
-        getProgress(animeExternalId),
-      ]);
+      const progress = await getProgress(animeExternalId);
+      let animeRequest = supabase.from("animes")
+        .select("*")
+        .eq("external_id", animeExternalId)
+        .order("source", { ascending: true })
+        .limit(1);
+      if (progress?.anime_title) animeRequest = animeRequest.eq("title", progress.anime_title);
+      const { data, error: animeError } = await animeRequest.maybeSingle();
       if (animeError) throw new Error(animeError.message);
       const trackedAnime = normalizeAnime(data);
       if (!trackedAnime) throw new Error("Anime data is unavailable.");
