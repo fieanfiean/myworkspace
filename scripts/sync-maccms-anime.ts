@@ -159,15 +159,38 @@ function pageUrl(source: string, page: number, typeId?: string): string {
 
 async function fetchPage(source: string, page: number, typeId?: string): Promise<MacCmsResponse> {
   const targetUrl = pageUrl(source, page, typeId);
+  const maxAttempts = 3;
 
-  try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-      },
-      signal: AbortSignal.timeout(30_000),
-    });
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error: unknown) {
+      if (attempt < maxAttempts - 1) {
+        const waitMs = 1000 * 2 ** (attempt + 1);
+        console.warn(`[Source: ${activeSourceName}] Network error fetching page ${page}; retrying in ${waitMs / 1000}s (${attempt + 1}/${maxAttempts}).`);
+        await delay(waitMs);
+        continue;
+      }
+      throw error;
+    }
+
+    if (response.status >= 500) {
+      const error = new Error(`MacCMS request failed for page ${page}: HTTP ${response.status} ${response.statusText}`);
+      if (attempt < maxAttempts - 1) {
+        const waitMs = 1000 * 2 ** (attempt + 1);
+        console.warn(`[Source: ${activeSourceName}] HTTP ${response.status} fetching page ${page}; retrying in ${waitMs / 1000}s (${attempt + 1}/${maxAttempts}).`);
+        await delay(waitMs);
+        continue;
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       throw new Error(`MacCMS request failed for page ${page}: HTTP ${response.status} ${response.statusText}`);
@@ -178,13 +201,9 @@ async function fetchPage(source: string, page: number, typeId?: string): Promise
       throw new Error(`MacCMS returned an invalid response for page ${page}.`);
     }
     return payload as MacCmsResponse;
-  } catch (err: unknown) {
-    console.error(`[Source: ${activeSourceName}] [Fetch Failed] 无法请求 URL: ${targetUrl}`);
-    if (err && typeof err === 'object' && 'cause' in err) {
-      console.error(`[Source: ${activeSourceName}] 底层网络报错 (err.cause):`, (err as { cause: unknown }).cause);
-    }
-    throw err;
   }
+
+  throw new Error(`MacCMS request failed for page ${page} after ${maxAttempts} attempts.`);
 }
 
 function apiCount(value: number | string | undefined, fallback: number): number {
@@ -266,12 +285,20 @@ async function main(): Promise<void> {
   let inserted = 0;
   let updated = 0;
   let skipped = 0;
+  const failedPages: number[] = [];
   const firstPage = options.all ? 1 : options.startPage;
   const discoveries: Array<{ typeId?: string; firstPayload: MacCmsResponse; lastPage: number; remoteTotal: number }> = [];
 
   for (const typeId of options.typeIds) {
     if (discoveries.length > 0) await delay(options.delayMs);
-    const firstPayload = await fetchPage(options.source, firstPage, typeId);
+    let firstPayload: MacCmsResponse;
+    try {
+      firstPayload = await fetchPage(options.source, firstPage, typeId);
+    } catch (error: unknown) {
+      console.error(`${logPrefix} Failed to fetch category ${typeId ?? 'all'}, page ${firstPage}:`, error);
+      failedPages.push(firstPage);
+      continue;
+    }
     const hasPageCount = Number.isSafeInteger(Number(firstPayload.pagecount)) && Number(firstPayload.pagecount) > 0;
     if (options.all && !hasPageCount) throw new Error(`MacCMS response did not include a valid pagecount required by --all${typeId ? ` for type ${typeId}` : ''}.`);
     const discoveredPageCount = apiCount(firstPayload.pagecount, firstPage);
@@ -291,7 +318,18 @@ async function main(): Promise<void> {
     for (let page = firstPage; page <= discovery.lastPage; page += 1) {
       processedPages += 1;
       console.log(`${logPrefix} [Page ${processedPages}/${totalPages}] Processing category ${discovery.typeId ?? 'all'}, source page ${page}...`);
-      const payload = page === firstPage ? discovery.firstPayload : await fetchPage(options.source, page, discovery.typeId);
+      let payload: MacCmsResponse;
+      if (page === firstPage) {
+        payload = discovery.firstPayload;
+      } else {
+        try {
+          payload = await fetchPage(options.source, page, discovery.typeId);
+        } catch (error: unknown) {
+          console.error(`${logPrefix} Failed to fetch category ${discovery.typeId ?? 'all'}, page ${page}:`, error);
+          failedPages.push(page);
+          continue;
+        }
+      }
       const rows = (payload.list ?? []).map(vod => normalizeVod(vod, options.sourceName, sourceSite, syncStartedAt));
       const validRows = rows.filter((row): row is AnimeRow => row !== null);
       skipped += rows.length - validRows.length;
@@ -363,6 +401,7 @@ async function main(): Promise<void> {
     }
   }
   console.log(`${logPrefix} Anime sync complete: ${imported} verified (${inserted} inserted, ${updated} updated), ${skipped} skipped.`);
+  console.log(`${logPrefix} Failed pages: ${failedPages.length > 0 ? `[${failedPages.join(', ')}]` : 'None'}`);
 }
 
 main().catch(error => {
