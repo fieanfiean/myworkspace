@@ -4,6 +4,7 @@ import process from 'node:process';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+let activeSourceName = 'default';
 
 interface Episode { ep: string; url: string }
 interface MacCmsVod {
@@ -15,17 +16,22 @@ interface MacCmsVod {
 }
 interface MacCmsResponse { pagecount?: number | string; total?: number | string; list?: MacCmsVod[] }
 interface AnimeRow {
-  external_id: string; title: string; cover_url: string | null; description: string | null;
+  external_id: string; source: string; title: string; cover_url: string | null; description: string | null;
   rating: number; year: number; genres: string[]; episodes: Episode[];
   status: 'completed' | 'ongoing'; region_category: string | null; area: string | null;
   source_site: string; updated_at: string; release_date: string;
 }
 type AnimeDbRow = Omit<AnimeRow, 'episodes'> & { episode_count: number };
 interface UpsertResult { written: number; inserted: number; updated: number }
-interface SyncOptions { source: string; startPage: number; pages: number; batchSize: number; all: boolean; skipProcessed: boolean; delayMs: number; typeIds: Array<string | undefined> }
+interface SyncOptions { source: string; sourceName: string; startPage: number; pages: number; pagesProvided: boolean; batchSize: number; all: boolean; skipProcessed: boolean; delayMs: number; typeIds: Array<string | undefined> }
 
 const DEFAULT_SOURCE = 'https://ffzy5.tv/api.php/provide/vod/?ac=detail';
-const ANIME_TYPE_IDS = ['4', '29', '30', '31', '32', '33'];
+const ALL_TYPE_IDS = [
+  '6', '7', '8', '9', '10', '11', '12', '20', '34',      // 电影
+  '13', '14', '15', '16', '21', '22', '23', '24', '36', // 连续剧
+  '25', '26', '27', '28',                                 // 综艺
+  '29', '30', '31', '32', '33',                           // 动漫
+];
 
 function optionValue(args: string[], name: string): string | undefined {
   const equalsArg = args.find(arg => arg.startsWith(`${name}=`));
@@ -52,19 +58,24 @@ function positiveInteger(value: string | undefined, fallback: number, flag: stri
 
 function parseOptions(args: string[]): SyncOptions {
   if (args.includes('--help')) {
-    console.log('Usage: npm run sync:anime -- [--all] [--skip-processed] [--source URL] [--type 4,29,30] [--start-page N] [--pages N] [--batch-size N] [--delay MS]');
+    console.log('Usage: npm run sync:anime -- [--all] [--skip-processed] [--source URL] [--source-name NAME] [--type 4,29,30] [--start-page N] [--pages N] [--batch-size N] [--delay MS]');
     process.exit(0);
   }
   const source = optionValue(args, '--source') || DEFAULT_SOURCE;
+  const sourceName = optionValue(args, '--source-name')?.trim() || 'default';
+  if (!/^[a-zA-Z0-9_-]+$/.test(sourceName)) throw new Error('--source-name may only contain letters, numbers, underscores, and hyphens.');
   const explicitTypeIds = optionValues(args, '--type');
   if (args.includes('--type') && explicitTypeIds.length === 0) throw new Error('--type requires one or more category IDs.');
   const sourceTypeId = new URL(source).searchParams.get('t') ?? undefined;
   const all = args.includes('--all');
-  const typeIds = explicitTypeIds.length > 0 ? explicitTypeIds : all && sourceTypeId === '4' ? ANIME_TYPE_IDS : [sourceTypeId];
+  const pagesValue = optionValue(args, '--pages');
+  const typeIds = explicitTypeIds.length > 0 ? explicitTypeIds : all ? ALL_TYPE_IDS : [sourceTypeId];
   return {
     source,
+    sourceName,
     startPage: positiveInteger(optionValue(args, '--start-page'), 1, '--start-page'),
-    pages: positiveInteger(optionValue(args, '--pages'), 1, '--pages'),
+    pages: positiveInteger(pagesValue, 1, '--pages'),
+    pagesProvided: pagesValue !== undefined,
     batchSize: positiveInteger(optionValue(args, '--batch-size'), 100, '--batch-size'),
     all,
     skipProcessed: args.includes('--skip-processed'),
@@ -110,7 +121,7 @@ function sourceUpdatedAt(vod: MacCmsVod, fallback: string): string {
   return fallback;
 }
 
-function normalizeVod(vod: MacCmsVod, sourceSite: string, fallbackUpdatedAt: string): AnimeRow | null {
+function normalizeVod(vod: MacCmsVod, sourceName: string, sourceSite: string, fallbackUpdatedAt: string): AnimeRow | null {
   const externalId = String(vod.vod_id ?? '').trim();
   const title = vod.vod_name?.trim() ?? '';
   const episodes = parseVodPlayUrl(vod.vod_play_url ?? '');
@@ -122,6 +133,7 @@ function normalizeVod(vod: MacCmsVod, sourceSite: string, fallbackUpdatedAt: str
   const status = Number(vod.vod_isend) === 1 || (vod.vod_remarks ?? '').includes('完结') ? 'completed' : 'ongoing';
   return {
     external_id: externalId,
+    source: sourceName,
     title,
     cover_url: vod.vod_pic ? upgradeProtocol(vod.vod_pic) : null,
     description: stripHtml(vod.vod_blurb || vod.vod_content),
@@ -147,15 +159,38 @@ function pageUrl(source: string, page: number, typeId?: string): string {
 
 async function fetchPage(source: string, page: number, typeId?: string): Promise<MacCmsResponse> {
   const targetUrl = pageUrl(source, page, typeId);
+  const maxAttempts = 3;
 
-  try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-      },
-      signal: AbortSignal.timeout(30_000),
-    });
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error: unknown) {
+      if (attempt < maxAttempts - 1) {
+        const waitMs = 1000 * 2 ** (attempt + 1);
+        console.warn(`[Source: ${activeSourceName}] Network error fetching page ${page}; retrying in ${waitMs / 1000}s (${attempt + 1}/${maxAttempts}).`);
+        await delay(waitMs);
+        continue;
+      }
+      throw error;
+    }
+
+    if (response.status >= 500) {
+      const error = new Error(`MacCMS request failed for page ${page}: HTTP ${response.status} ${response.statusText}`);
+      if (attempt < maxAttempts - 1) {
+        const waitMs = 1000 * 2 ** (attempt + 1);
+        console.warn(`[Source: ${activeSourceName}] HTTP ${response.status} fetching page ${page}; retrying in ${waitMs / 1000}s (${attempt + 1}/${maxAttempts}).`);
+        await delay(waitMs);
+        continue;
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       throw new Error(`MacCMS request failed for page ${page}: HTTP ${response.status} ${response.statusText}`);
@@ -166,13 +201,9 @@ async function fetchPage(source: string, page: number, typeId?: string): Promise
       throw new Error(`MacCMS returned an invalid response for page ${page}.`);
     }
     return payload as MacCmsResponse;
-  } catch (err: unknown) {
-    console.error(`[Fetch Failed] 无法请求 URL: ${targetUrl}`);
-    if (err && typeof err === 'object' && 'cause' in err) {
-      console.error('底层网络报错 (err.cause):', (err as { cause: unknown }).cause);
-    }
-    throw err;
   }
+
+  throw new Error(`MacCMS request failed for page ${page} after ${maxAttempts} attempts.`);
 }
 
 function apiCount(value: number | string | undefined, fallback: number): number {
@@ -180,54 +211,57 @@ function apiCount(value: number | string | undefined, fallback: number): number 
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function safeUpsert(supabase: SupabaseClient, dbBatch: AnimeDbRow[], retries = 3): Promise<UpsertResult | null> {
+async function safeUpsert(supabase: SupabaseClient, dbBatch: AnimeDbRow[], sourceName: string, retries = 3): Promise<UpsertResult | null> {
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
       const externalIds = dbBatch.map(item => item.external_id);
       const { data: existingRows, error: lookupError } = await supabase
         .from('animes')
-        .select('external_id')
-        .in('external_id', externalIds);
+        .select('external_id,source')
+        .in('external_id', externalIds)
+        .eq('source', sourceName);
       if (lookupError) throw new Error(`Pre-upsert lookup failed: ${lookupError.message}`);
 
       const existingIds = new Set((existingRows ?? []).map(row => String(row.external_id)));
       const { data, error } = await supabase
         .from('animes')
-        .upsert(dbBatch, { onConflict: 'external_id' })
-        .select('external_id');
+        .upsert(dbBatch, { onConflict: 'external_id,source' })
+        .select('external_id,source');
       if (error) {
         const diagnostics = [error.code, error.details, error.hint].filter(Boolean).join(' | ');
-        console.warn(`[Supabase Warning] 写入失败 (第 ${attempt}/${retries} 次): ${error.message}${diagnostics ? ` | ${diagnostics}` : ''}`);
+        console.warn(`[Source: ${sourceName}] [Supabase Warning] 写入失败 (第 ${attempt}/${retries} 次): ${error.message}${diagnostics ? ` | ${diagnostics}` : ''}`);
       } else if (!data || data.length !== dbBatch.length) {
-        console.warn(`[Supabase Warning] 写入校验失败 (第 ${attempt}/${retries} 次): expected ${dbBatch.length} returned rows, received ${data?.length ?? 0}.`);
+        console.warn(`[Source: ${sourceName}] [Supabase Warning] 写入校验失败 (第 ${attempt}/${retries} 次): expected ${dbBatch.length} returned rows, received ${data?.length ?? 0}.`);
       } else {
         const inserted = externalIds.filter(id => !existingIds.has(id)).length;
         const result = { written: data.length, inserted, updated: data.length - inserted };
-        console.log(`[Supabase] Verified ${result.written} rows (${result.inserted} inserted, ${result.updated} updated).`);
+        console.log(`[Source: ${sourceName}] [Supabase] Verified ${result.written} rows (${result.inserted} inserted, ${result.updated} updated).`);
         return result;
       }
     } catch (error: unknown) {
       const detail = error instanceof Error ? ` ${error.message}` : '';
-      console.warn(`[Supabase Warning] 发生网络/520网关异常，第 ${attempt}/${retries} 次重试...${detail}`);
+      console.warn(`[Source: ${sourceName}] [Supabase Warning] 发生网络/520网关异常，第 ${attempt}/${retries} 次重试...${detail}`);
     }
     if (attempt < retries) await delay(1000 * Math.pow(2, attempt - 1));
   }
-  console.error('[Supabase Error] 批次写入彻底失败，跳过该批次。');
+  console.error(`[Source: ${sourceName}] [Supabase Error] 批次写入彻底失败，跳过该批次。`);
   return null;
 }
 
 async function main(): Promise<void> {
   if (existsSync('.env.local')) process.loadEnvFile('.env.local');
   const options = parseOptions(process.argv.slice(2));
+  activeSourceName = options.sourceName;
+  const logPrefix = `[Source: ${options.sourceName}]`;
   const syncStartedAt = new Date().toISOString();
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl) throw new Error('SUPABASE_URL is required in .env.local or the process environment.');
   if (!serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required in .env.local or the process environment.');
   const targetRef = supabaseUrl.replace(/^https:\/\//, '').replace(/\.supabase\.co\/?$/, '');
-  console.log(`[Target] URL ref: ${targetRef}`);
-  console.log(`[Target] Service key length: ${serviceRoleKey.length}`);
-  console.log(`[Target] Service key is JWT: ${serviceRoleKey.startsWith('eyJ')}`);
+  console.log(`${logPrefix} [Target] URL ref: ${targetRef}`);
+  console.log(`${logPrefix} [Target] Service key length: ${serviceRoleKey.length}`);
+  console.log(`${logPrefix} [Target] Service key is JWT: ${serviceRoleKey.startsWith('eyJ')}`);
 
   // ================= 1. 读取 R2 环境变量并初始化 S3 客户端 =================
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -251,31 +285,52 @@ async function main(): Promise<void> {
   let inserted = 0;
   let updated = 0;
   let skipped = 0;
+  const failedPages: number[] = [];
   const firstPage = options.all ? 1 : options.startPage;
   const discoveries: Array<{ typeId?: string; firstPayload: MacCmsResponse; lastPage: number; remoteTotal: number }> = [];
 
   for (const typeId of options.typeIds) {
     if (discoveries.length > 0) await delay(options.delayMs);
-    const firstPayload = await fetchPage(options.source, firstPage, typeId);
+    let firstPayload: MacCmsResponse;
+    try {
+      firstPayload = await fetchPage(options.source, firstPage, typeId);
+    } catch (error: unknown) {
+      console.error(`${logPrefix} Failed to fetch category ${typeId ?? 'all'}, page ${firstPage}:`, error);
+      failedPages.push(firstPage);
+      continue;
+    }
     const hasPageCount = Number.isSafeInteger(Number(firstPayload.pagecount)) && Number(firstPayload.pagecount) > 0;
     if (options.all && !hasPageCount) throw new Error(`MacCMS response did not include a valid pagecount required by --all${typeId ? ` for type ${typeId}` : ''}.`);
     const discoveredPageCount = apiCount(firstPayload.pagecount, firstPage);
     const requestedLastPage = options.startPage + options.pages - 1;
-    const lastPage = options.all ? discoveredPageCount : hasPageCount ? Math.min(discoveredPageCount, requestedLastPage) : requestedLastPage;
+    const lastPage = options.all
+      ? options.pagesProvided ? Math.min(discoveredPageCount, options.pages) : discoveredPageCount
+      : hasPageCount ? Math.min(discoveredPageCount, requestedLastPage) : requestedLastPage;
     discoveries.push({ typeId, firstPayload, lastPage, remoteTotal: apiCount(firstPayload.total, (firstPayload.list ?? []).length) });
   }
 
   const totalPages = discoveries.reduce((sum, item) => sum + item.lastPage - firstPage + 1, 0);
   const remoteTotal = discoveries.reduce((sum, item) => sum + item.remoteTotal, 0);
-  console.log(`MacCMS reports ${remoteTotal} items across ${totalPages} pages for categories ${options.typeIds.filter(Boolean).join(', ') || 'all'}.`);
+  console.log(`${logPrefix} MacCMS reports ${remoteTotal} items across ${totalPages} pages for categories ${options.typeIds.filter(Boolean).join(', ') || 'all'}.`);
 
   let processedPages = 0;
   for (const discovery of discoveries) {
     for (let page = firstPage; page <= discovery.lastPage; page += 1) {
       processedPages += 1;
-      console.log(`[Page ${processedPages}/${totalPages}] Processing category ${discovery.typeId ?? 'all'}, source page ${page}...`);
-      const payload = page === firstPage ? discovery.firstPayload : await fetchPage(options.source, page, discovery.typeId);
-      const rows = (payload.list ?? []).map(vod => normalizeVod(vod, sourceSite, syncStartedAt));
+      console.log(`${logPrefix} [Page ${processedPages}/${totalPages}] Processing category ${discovery.typeId ?? 'all'}, source page ${page}...`);
+      let payload: MacCmsResponse;
+      if (page === firstPage) {
+        payload = discovery.firstPayload;
+      } else {
+        try {
+          payload = await fetchPage(options.source, page, discovery.typeId);
+        } catch (error: unknown) {
+          console.error(`${logPrefix} Failed to fetch category ${discovery.typeId ?? 'all'}, page ${page}:`, error);
+          failedPages.push(page);
+          continue;
+        }
+      }
+      const rows = (payload.list ?? []).map(vod => normalizeVod(vod, options.sourceName, sourceSite, syncStartedAt));
       const validRows = rows.filter((row): row is AnimeRow => row !== null);
       skipped += rows.length - validRows.length;
       let pageProcessedSkipped = 0;
@@ -289,8 +344,9 @@ async function main(): Promise<void> {
           const externalIds = [...new Set(batch.map(item => item.external_id))];
           const { data: processedRows, error: processedLookupError } = await supabase
             .from('animes')
-            .select('external_id')
+            .select('external_id,source')
             .in('external_id', externalIds)
+            .eq('source', options.sourceName)
             .gt('episode_count', 0);
           if (processedLookupError) {
             throw new Error(`Processed-anime lookup failed: ${processedLookupError.message}`);
@@ -317,7 +373,7 @@ async function main(): Promise<void> {
 
             await r2.send(new PutObjectCommand({
               Bucket: bucketName,
-              Key: `anime-details/${row.external_id}.json`,
+              Key: `anime-details/${options.sourceName}/${row.external_id}.json`,
               Body: JSON.stringify(detailPayload),
               ContentType: 'application/json',
             }));
@@ -331,7 +387,7 @@ async function main(): Promise<void> {
         });
 
         // 写入 Supabase 数据库
-        const result = await safeUpsert(supabase, dbBatch);
+        const result = await safeUpsert(supabase, dbBatch, options.sourceName);
         if (result) {
           imported += result.written;
           inserted += result.inserted;
@@ -340,14 +396,15 @@ async function main(): Promise<void> {
         }
         else skipped += dbBatch.length;
       }
-      console.log(`[Page ${processedPages}/${totalPages}] Processed ${validRows.length} items (${pageProcessedSkipped} skipped as processed, ${pageWritten} written)`);
+      console.log(`${logPrefix} [Page ${processedPages}/${totalPages}] Processed ${validRows.length} items (${pageProcessedSkipped} skipped as processed, ${pageWritten} written)`);
       await delay(300);
     }
   }
-  console.log(`Anime sync complete: ${imported} verified (${inserted} inserted, ${updated} updated), ${skipped} skipped.`);
+  console.log(`${logPrefix} Anime sync complete: ${imported} verified (${inserted} inserted, ${updated} updated), ${skipped} skipped.`);
+  console.log(`${logPrefix} Failed pages: ${failedPages.length > 0 ? `[${failedPages.join(', ')}]` : 'None'}`);
 }
 
 main().catch(error => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(`[Source: ${activeSourceName}]`, error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });

@@ -3,6 +3,7 @@ export interface AnimeEpisode { ep: string; url: string }
 export interface Anime {
   id: string;
   external_id: string;
+  source: string;
   title: string;
   cover_url: string | null;
   description: string | null;

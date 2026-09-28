@@ -3,13 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { Sidebar } from './components/layout/Sidebar';
 import { EnvironmentBadge } from './components/common/EnvironmentBadge';
 import { Header } from './components/layout/Header';
-import { BottomNav } from './components/layout/BottomNav';
 import { CommandPalette } from './components/common/CommandPalette';
 import { PWAUpdateToast } from './components/common/PWAUpdateToast';
 import { Layout } from './components/layout/Layout';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import { LoginPage } from './pages/LoginPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { ThemeProvider } from './context/ThemeContext';
 import type { Tab } from './components/layout/Sidebar';
 
@@ -17,7 +18,7 @@ const AboutMePage = lazy(() => import('./pages/AboutMePage').then(module => ({ d
 const Home = lazy(() => import('./pages/Home').then(module => ({ default: module.Home })));
 const BudgetPage = lazy(() => import('./pages/BudgetPage').then(module => ({ default: module.BudgetPage })));
 const AnimePage = lazy(() => import('./pages/AnimePage').then(module => ({ default: module.AnimePage })));
-const StockAnalysisPage = lazy(() => import('./pages/StockAnalysisPage').then(module => ({ default: module.StockAnalysisPage })));
+const NotesPage = lazy(() => import('./pages/NotesPage').then(module => ({ default: module.NotesPage })));
 
 const EDGE_SWIPE_MIN = 16;
 const EDGE_SWIPE_MAX = 80;
@@ -31,6 +32,7 @@ function AuthenticatedApp() {
   const [resumeExportToken, setResumeExportToken] = useState(0);
   const touch = useRef({ startX: 0, startY: 0, currentX: 0, currentY: 0, blocked: false, drawer: null as 'left' | 'right' | null });
   const { user, loading } = useAuth();
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(isSidebarCollapsed));
@@ -94,6 +96,9 @@ function AuthenticatedApp() {
     };
   }, [isMobileSidebarOpen, isMobileToolsOpen]);
 
+  if (pathname === '/forgot-password') return <ForgotPasswordPage />;
+  if (pathname === '/reset-password') return <ResetPasswordPage />;
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-600 dark:bg-slate-950 dark:text-slate-400">
@@ -102,7 +107,7 @@ function AuthenticatedApp() {
     );
   }
 
-  if (!user) return <LoginPage />;
+  if (!user || pathname === '/login') return <LoginPage />;
 
   const changeTab = (tab: Tab) => {
     setActiveTab(tab);
@@ -123,17 +128,16 @@ function AuthenticatedApp() {
       <EnvironmentBadge />
       <Sidebar activeTab={activeTab} setActiveTab={changeTab} isCollapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed(current => !current)} mobileOpen={isMobileSidebarOpen} onMobileClose={() => setIsMobileSidebarOpen(false)} />
 
-      <main className={`w-full min-w-0 flex-1 px-4 pb-24 pt-4 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-4 md:p-8 ${isSidebarCollapsed ? 'md:ml-16' : 'md:ml-64'}`}>
+      <main className={`w-full min-w-0 flex-1 p-4 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-4 md:p-8 ${isSidebarCollapsed ? 'md:ml-16' : 'md:ml-64'}`}>
         <Header onOpenMenu={() => setIsMobileSidebarOpen(true)} onOpenTools={() => setIsMobileToolsOpen(true)} />
         <Suspense fallback={<div className="flex min-h-72 items-center justify-center text-sm text-slate-500">{t('common.loadingWorkspace')}</div>}>
           {activeTab === 'dashboard' && <Home onNavigate={navigateFromHome} />}
           {activeTab === 'profile' && <AboutMePage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} resumeExportToken={resumeExportToken} />}
           {activeTab === 'budget' && <BudgetPage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
           {activeTab === 'anime' && <AnimePage />}
-          {activeTab === 'stocks' && <StockAnalysisPage />}
+          {activeTab === 'notes' && <NotesPage />}
         </Suspense>
       </main>
-      <BottomNav activeTab={activeTab} onTabChange={changeTab} />
       <CommandPalette onNavigate={navigateFromHome} />
       <PWAUpdateToast />
     </Layout>

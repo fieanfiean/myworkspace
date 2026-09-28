@@ -8,8 +8,9 @@ import { useT } from '@/hooks/useT';
 import { MAX_UPLOAD_SIZE_BYTES, uploadProfileAvatar } from '@/services/storageService';
 import { getProfile, saveProfile } from '@/services/profileService';
 
-function fallbackProfile(userId: string, email: string, fullName?: string): Profile {
-  return { id: userId, full_name: fullName || email.split('@')[0] || 'New User', headline: '', company: '', location: '', email, website: '', avatar_url: '' };
+function fallbackProfile(userId: string, email: string, fullName?: string, nickname?: string): Profile {
+  const fallbackNickname = nickname || email;
+  return { id: userId, full_name: fullName || fallbackNickname, nickname: fallbackNickname, headline: '', company: '', location: '', email, website: '', avatar_url: '' };
 }
 
 function initials(name: string) {
@@ -32,7 +33,14 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
     if (!user) return;
     let active = true;
     const email = user.email ?? '';
-    const fallback = fallbackProfile(user.id, email, typeof user.user_metadata.full_name === 'string' ? user.user_metadata.full_name : undefined);
+    const metadata = user.user_metadata;
+    const metadataNickname = [metadata.nickname, metadata.display_name, metadata.name].find(value => typeof value === 'string' && value.trim());
+    const fallback = fallbackProfile(
+      user.id,
+      email,
+      typeof metadata.full_name === 'string' ? metadata.full_name : undefined,
+      typeof metadataNickname === 'string' ? metadataNickname : undefined,
+    );
 
     const loadProfile = async () => {
       setLoading(true);
@@ -41,7 +49,13 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
         const data = await getProfile(user.id);
         if (!active) return;
         if (data) {
-          setProfile({ ...fallback, ...data, id: user.id });
+          setProfile({
+            ...fallback,
+            ...data,
+            id: user.id,
+            full_name: data.full_name || data.nickname || fallback.full_name,
+            nickname: data.nickname || data.email || fallback.nickname,
+          });
           setLoading(false);
           return;
         }
@@ -93,6 +107,7 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
   }, [achievements, experiences, t]);
 
   if (loading || !profile) return <div className="profile-header-card min-h-52 animate-pulse" aria-label="Loading profile" />;
+  const headerName = profile.full_name || profile.nickname || profile.email;
 
   return (
     <>
@@ -100,8 +115,8 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-6">
           <div className="group relative size-24 shrink-0 justify-self-center rounded-[1.15rem] bg-gradient-to-tr from-indigo-100 to-purple-100 p-1 dark:from-indigo-500/20 dark:to-purple-500/20 sm:size-32 sm:justify-self-auto">
             {profile.avatar_url
-              ? <img src={profile.avatar_url} alt={t('profile.avatar.alt', { name: profile.full_name })} className="size-full rounded-2xl object-cover" />
-              : <div className="flex size-full items-center justify-center rounded-2xl bg-blue-600 text-4xl font-bold text-white sm:text-5xl">{initials(profile.full_name)}</div>}
+              ? <img src={profile.avatar_url} alt={t('profile.avatar.alt', { name: headerName })} className="size-full rounded-2xl object-cover" />
+              : <div className="flex size-full items-center justify-center rounded-2xl bg-blue-600 text-4xl font-bold text-white sm:text-5xl">{initials(headerName)}</div>}
             <input ref={avatarInputRef} type="file" accept="image/*" className="sr-only" onChange={event => void changeAvatar(event)} />
             <button type="button" disabled={uploadingAvatar} onClick={() => avatarInputRef.current?.click()} aria-label={t('profile.avatar.change')} className="absolute inset-1 flex items-center justify-center rounded-2xl bg-slate-950/65 text-white opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-wait">
               {uploadingAvatar ? <LoaderCircle className="animate-spin" size={22} /> : <Camera size={22} />}
@@ -109,7 +124,7 @@ export function ProfileHeader({ experiences, achievements }: { experiences: Expe
           </div>
           <div className="flex min-h-28 min-w-0 flex-col justify-between gap-2 sm:min-h-32">
             <div className="flex min-w-0 items-center gap-3">
-              <h2 className="min-w-0 truncate text-2xl font-bold text-white sm:text-4xl" title={profile.full_name}>{profile.full_name}</h2>
+              <h2 className="min-w-0 truncate text-2xl font-bold text-white sm:text-4xl" title={headerName}>{headerName}</h2>
               <button type="button" onClick={() => setEditing(true)} className="shrink-0 rounded-lg border border-slate-700 p-2 text-slate-400 transition hover:border-blue-500 hover:bg-slate-800 hover:text-blue-400" aria-label="Edit profile"><Pencil size={17} /></button>
             </div>
             {(profile.headline || profile.company) && <p className="truncate text-sm text-slate-400 sm:text-lg">{profile.headline}{profile.headline && profile.company ? ' · ' : ''}{profile.company && <span className="text-slate-200">{profile.company}</span>}</p>}

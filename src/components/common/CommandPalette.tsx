@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { BarChart3, Camera, Clapperboard, Home, Plus, Search, UserRound, WalletCards, X } from 'lucide-react';
+import { Camera, Clapperboard, Home, NotebookPen, Plus, Search, UserRound, WalletCards, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Tab } from '@/components/layout/Sidebar';
 
@@ -59,7 +59,7 @@ export function CommandPalette({ onNavigate }: CommandPaletteProps) {
     { id: 'add', label: t('command.items.add'), description: t('command.items.addHint'), keywords: 'add transaction expense income 记账 收入 支出', icon: Plus, run: () => onNavigate('budget', 'budget') },
     { id: 'scan', label: t('command.items.scan'), description: t('command.items.scanHint'), keywords: 'scan receipt ocr camera 扫描 收据', icon: Camera, run: () => onNavigate('budget', 'budget') },
     { id: 'anime', label: t('command.items.anime'), description: t('command.items.animeHint'), keywords: 'anime watch stream 动漫 看戏', icon: Clapperboard, run: () => onNavigate('anime') },
-    { id: 'stocks', label: t('command.items.stocks'), description: t('command.items.stocksHint'), keywords: 'stock market aapl nvda 股票 行情', icon: BarChart3, run: () => onNavigate('stocks') },
+    { id: 'notes', label: t('command.items.notes'), description: t('command.items.notesHint'), keywords: 'notes memo remember important 笔记 备忘 重要', icon: NotebookPen, run: () => onNavigate('notes') },
   ], [onNavigate, t]);
   const results = commands.filter(item => fuzzyMatch(`${item.label} ${item.description} ${item.keywords}`, query));
 
