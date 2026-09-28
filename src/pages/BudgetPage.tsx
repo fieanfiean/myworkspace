@@ -1,19 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type UIEvent } from 'react';
 import { AlertTriangle, ArrowUpRight, Banknote, BookOpen, CalendarDays, Camera, Car, CircleDollarSign, Clapperboard, Dumbbell, Gift, HeartPulse, LoaderCircle, Plane, Plus, ReceiptText, Search, Shirt, ShoppingCart, Utensils, WalletCards, X, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import imageCompression from 'browser-image-compression';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
 import { useBudgetTransactions } from '@/hooks/useBudgetTransactions';
+import { MAX_RECEIPT_IMAGES, useReceiptBatchScan, type ReceiptReviewTransaction } from '@/hooks/useReceiptBatchScan';
 import { getMyrPerCurrency } from '@/lib/exchangeRates';
 import { DeleteConfirmDialog } from '@/components/common/DeleteConfirmDialog';
 import { TransactionEditModal } from '@/components/budget/TransactionEditModal';
 import { TransactionDetailModal } from '@/components/budget/TransactionDetailModal';
 import { ExchangeRateAttribution } from '@/components/budget/ExchangeRateAttribution';
 import { filterBudgetTransactions, type CategoryFilter, type DateRangePreset, type TransactionTypeFilter } from '@/lib/budgetFilters';
-import { checkDuplicateTransaction, type DuplicateCheckResult, type ParsedOCRResult } from '@/lib/deduplication';
-import { parseReceipt } from '@/services/budgetService';
-import { uploadToR2 } from '@/services/storageService';
+import type { DuplicateCheckResult } from '@/lib/deduplication';
 import { categoriesForType, expenseCategories, incomeCategories, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
 
 const baseCurrency: CurrencyCode = 'MYR';
@@ -97,53 +95,6 @@ const chartPeriodKey = (granularity: ChartGranularity, date: Date) => {
   return date.toISOString().slice(0, 10);
 };
 
-interface ReceiptOCRResult extends ParsedOCRResult {
-  currency: 'MYR';
-  transaction_time: string;
-  type: TransactionType;
-  suggested_category: 'Groceries' | 'Food' | 'Transport' | 'Utilities' | 'Entertainment' | 'Healthcare' | 'Other';
-}
-
-interface ReceiptBatchResult {
-  transactions: ReceiptOCRResult[];
-}
-
-interface BatchImportItem {
-  id: string;
-  transaction: NewBudgetTransaction;
-  duplicate: DuplicateCheckResult | null;
-  selected: boolean;
-}
-
-interface ReceiptFunctionError {
-  error: string;
-}
-
-type ReceiptFunctionResponse = ReceiptBatchResult | ReceiptFunctionError;
-
-async function receiptInvokeErrorMessage(error: unknown, fallback: string, rateLimit: string, serviceUnavailable: string): Promise<string> {
-  if (typeof error !== 'object' || error === null) return fallback;
-  const context = (error as { context?: unknown }).context;
-  if (!(context instanceof Response)) return fallback;
-  if (context.status === 429) return rateLimit;
-  if (context.status === 503) return serviceUnavailable;
-  try {
-    const body = await context.clone().json() as unknown;
-    if (typeof body === 'object' && body !== null) {
-      const errorBody = body as { error?: unknown; details?: unknown };
-      if (errorBody.details !== undefined) console.error('400 Detailed Response:', errorBody.details);
-      if (typeof errorBody.error === 'string') {
-        console.error('Parse Receipt Error:', errorBody.error);
-        return errorBody.error;
-      }
-    }
-  } catch {
-    // The fallback remains actionable when the response body is not JSON.
-  }
-  console.error('Parse Receipt Error:', error instanceof Error ? error.message : fallback);
-  return fallback;
-}
-
 export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; onCloseTools: () => void }) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -153,10 +104,8 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const [formError, setFormError] = useState<string | null>(null);
   const [loadingRate, setLoadingRate] = useState(false);
   const [rateError, setRateError] = useState<string | null>(null);
-  const [scanningReceipt, setScanningReceipt] = useState(false);
   const [draggingReceipt, setDraggingReceipt] = useState(false);
   const [duplicateMatch, setDuplicateMatch] = useState<DuplicateCheckResult | null>(null);
-  const [batchItems, setBatchItems] = useState<BatchImportItem[]>([]);
   const [viewing, setViewing] = useState<BudgetTransaction | null>(null);
   const [editing, setEditing] = useState<BudgetTransaction | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BudgetTransaction | null>(null);
@@ -184,74 +133,74 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const exchangeRate = selectedCurrency === baseCurrency ? 1 : (form.exchangeRate ?? 0);
   const convertedAmount = Number.isFinite(form.amount * exchangeRate) ? Math.round(form.amount * exchangeRate * 100) / 100 : 0;
 
-  const handleFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
+  const receiptMessages = useMemo(() => ({
+    scanError: t('budget.form.scanError'),
+    noTransactions: t('budget.form.scanNoTransactions'),
+    rateLimit: t('budget.form.scanRateLimit'),
+    serviceUnavailable: t('budget.form.scanServiceUnavailable'),
+    invalidImage: t('budget.scan.invalidImage'),
+  }), [t]);
+  const {
+    images: receiptImages,
+    reviewTransactions,
+    selectedTransactions,
+    selectionMessage,
+    setSelectionMessage,
+    scanningReceipt,
+    allFinished,
+    selectFiles,
+    removeImage,
+    processSelectedImages,
+    retryImage,
+    updateReviewTransaction,
+    toggleReviewTransaction,
+    clearBatch,
+  } = useReceiptBatchScan({ existingTransactions: transactions, messages: receiptMessages });
+
+  const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
-    const file = input.files?.[0];
-    try {
-      if (!file) return;
-      setScanningReceipt(true);
-      setFormError(null);
-      setDuplicateMatch(null);
-      setBatchItems([]);
-      if (!file.type.startsWith('image/')) throw new Error('Receipt upload must be an image.');
-      const compressedFile = await imageCompression(file, {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 1920,
-        useWebWorker: true,
-      });
-      const imageUrl = await uploadToR2(compressedFile, 'receipts');
-      const { data, error: invokeError } = await parseReceipt<ReceiptFunctionResponse>(imageUrl);
-      if (invokeError) {
-        setFormError(await receiptInvokeErrorMessage(invokeError, t('budget.form.scanError'), t('budget.form.scanRateLimit'), t('budget.form.scanServiceUnavailable')));
-        return;
-      }
-      if (!data) throw new Error(t('budget.form.scanError'));
-      if ('error' in data) {
-        setFormError(data.error);
-        return;
-      }
-      if (!Array.isArray(data.transactions) || data.transactions.length === 0) throw new Error(t('budget.form.scanNoTransactions'));
-      const parsedItems = data.transactions.map((item, index): BatchImportItem => {
-        const normalizedCategory = item.suggested_category.toLocaleLowerCase();
-        const suggestedCategory = normalizedCategory === 'other' ? 'other_expense' : normalizedCategory as TransactionCategory;
-        const category = categoriesForType(item.type).includes(suggestedCategory) ? suggestedCategory : item.type === 'income' ? 'other_income' : 'other_expense';
-        const parsed: ParsedOCRResult = { amount: item.amount, date: item.date, time: item.transaction_time, description: item.description };
-        const duplicate = checkDuplicateTransaction(parsed, transactions);
-        return {
-          id: `${item.date}-${item.transaction_time}-${index}`,
-          transaction: { type: item.type, amount: item.amount, description: item.description, transactionDate: item.date, transaction_time: item.transaction_time, category, originalCurrency: baseCurrency, originalAmount: item.amount, exchangeRate: 1 },
-          duplicate: duplicate.isDuplicate ? duplicate : null,
-          selected: !duplicate.isDuplicate,
-        };
-      });
-      if (parsedItems.length === 1) {
-        setForm(parsedItems[0].transaction);
-        setDuplicateMatch(parsedItems[0].duplicate);
-      } else {
-        setBatchItems(parsedItems);
-      }
-      setRateError(null);
-    } catch (cause) {
-      console.error('Receipt scan failed.', cause);
-      setFormError(cause instanceof Error ? cause.message : t('budget.form.scanError'));
-    } finally {
-      setScanningReceipt(false);
-      input.value = '';
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    if (!input.files?.length) return;
+    const result = selectFiles(input.files);
+    setFormError(null);
+    setDuplicateMatch(null);
+    if (result.limited) setSelectionMessage(t('budget.scan.batchLimit', { count: MAX_RECEIPT_IMAGES }));
+    input.value = '';
+  };
+
+  const applySingleResult = (rows: ReceiptReviewTransaction[]) => {
+    if (receiptImages.length !== 1 || rows.length !== 1) return false;
+    setForm(rows[0].transaction);
+    setDuplicateMatch(rows[0].duplicate);
+    setRateError(null);
+    return true;
+  };
+
+  const startReceiptScan = async () => {
+    setFormError(null);
+    const rows = await processSelectedImages();
+    applySingleResult(rows);
+  };
+
+  const retryReceiptImage = async (imageId: string) => {
+    setFormError(null);
+    const rows = await retryImage(imageId);
+    applySingleResult(rows);
   };
 
   const importBatch = async () => {
-    const selected = batchItems.filter(item => item.selected).map(item => item.transaction);
-    if (selected.length === 0) {
+    if (selectedTransactions.length === 0) {
       setFormError(t('budget.form.batchSelectOne'));
+      return;
+    }
+    if (selectedTransactions.some(item => !Number.isFinite(item.amount) || item.amount <= 0 || !item.description.trim() || !item.transactionDate)) {
+      setFormError(t('budget.form.validation'));
       return;
     }
     setSaving(true);
     setFormError(null);
     try {
-      await addTransactions(selected);
-      setBatchItems([]);
+      await addTransactions(selectedTransactions);
+      clearBatch();
     } catch (cause) {
       setFormError(cause instanceof Error ? cause.message : t('budget.form.batchSaveError'));
     } finally {
@@ -299,13 +248,11 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const handleReceiptDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDraggingReceipt(false);
-    const file = event.dataTransfer.files[0];
-    const input = fileInputRef.current;
-    if (!file || !input || scanningReceipt || saving) return;
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    input.files = transfer.files;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!event.dataTransfer.files.length || scanningReceipt || saving) return;
+    const result = selectFiles(event.dataTransfer.files);
+    setFormError(null);
+    setDuplicateMatch(null);
+    if (result.limited) setSelectionMessage(t('budget.scan.batchLimit', { count: MAX_RECEIPT_IMAGES }));
   };
 
   const groupedTransactions = useMemo(() => {
@@ -466,7 +413,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
             </div>
             <div ref={chartScrollRef} className="scrollbar-none relative min-w-0 flex-1 cursor-grab touch-pan-x overflow-x-auto overscroll-x-contain active:cursor-grabbing" aria-label={t('budget.chart.title')} onScroll={handleChartScroll} onPointerDown={startChartDrag} onPointerMove={moveChartDrag} onPointerUp={stopChartDrag} onPointerCancel={stopChartDrag}>
               {loadingOlderChartData && <div className="sticky left-2 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-950/90 text-indigo-400 shadow-lg" role="status" aria-label={t('budget.chart.loadingOlder')}><LoaderCircle size={16} className="animate-spin"/></div>}
-              <div className="absolute inset-y-0 left-0" style={{ width: `max(100%, ${chartWidth}px)` }}><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <div className="absolute inset-y-0 left-0" style={{ width: `max(100%, ${chartWidth}px)` }}><ResponsiveContainer width="100%" height="100%" debounce={100}><AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs><linearGradient id="incomeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#34d399" stopOpacity={0.3}/><stop offset="95%" stopColor="#34d399" stopOpacity={0}/></linearGradient><linearGradient id="expenseFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#fb7185" stopOpacity={0.25}/><stop offset="95%" stopColor="#fb7185" stopOpacity={0}/></linearGradient></defs>
                 <CartesianGrid className="budget-chart-grid" stroke="#1e293b" vertical={false} strokeDasharray="4 4"/><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10}/><YAxis hide domain={[0, chartYAxisMax]} ticks={chartYAxisTicks}/><Tooltip contentStyle={{ background: 'var(--chart-tooltip-bg, #0f172a)', border: '1px solid var(--chart-tooltip-border, #334155)', borderRadius: 12 }} labelStyle={{ color: 'var(--chart-tooltip-text, #f8fafc)' }} formatter={value => currency.format(Number(value))}/><Area type="monotone" dataKey="income" name={t('budget.income')} stroke="#34d399" strokeWidth={2.5} fill="url(#incomeFill)"/><Area type="monotone" dataKey="expenses" name={t('budget.expense')} stroke="#fb7185" strokeWidth={2.5} fill="url(#expenseFill)"/>
               </AreaChart></ResponsiveContainer></div>
@@ -479,7 +426,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
       <button type="button" aria-label={t('sidebar.closeTools')} onClick={onCloseTools} className={`fixed inset-0 z-[55] bg-slate-950/60 backdrop-blur-sm transition-opacity md:hidden ${toolsOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}/>
       <aside data-swipe-drawer="right" className={`fixed inset-y-0 right-0 z-[60] w-[min(22rem,calc(100vw-2rem))] touch-pan-y overflow-y-auto overscroll-x-contain border-l border-slate-800 bg-slate-900 p-5 shadow-2xl transition-transform duration-300 md:static md:z-auto md:w-auto md:translate-x-0 md:overflow-visible md:rounded-2xl md:border md:bg-slate-900/80 md:shadow-xl md:shadow-black/10 xl:sticky xl:top-6 ${toolsOpen ? 'translate-x-0' : 'translate-x-full'}`}><div className="mb-5 flex items-center gap-3"><span className="rounded-xl bg-indigo-500/15 p-2 text-indigo-400"><Plus size={19}/></span><div className="min-w-0 flex-1"><h2 className="font-semibold text-white">{t('budget.form.title')}</h2><p className="text-xs text-slate-500">{t('budget.form.subtitle')}</p></div><button type="button" onClick={onCloseTools} aria-label={t('sidebar.closeTools')} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-800 md:hidden"><X size={20}/></button></div>
         <form className="relative space-y-5" aria-busy={scanningReceipt} onSubmit={event => void submit(event)}>
-          {scanningReceipt && <div className="absolute -inset-2 z-20 flex min-h-full items-center justify-center rounded-xl bg-slate-900/90 backdrop-blur-sm" role="status"><span className="flex flex-col items-center gap-3 text-sm font-semibold text-indigo-300"><LoaderCircle size={32} className="animate-spin"/>{t('budget.form.scanning')}</span></div>}
+          {scanningReceipt && <div className="absolute -inset-2 z-20 flex min-h-full items-start justify-center rounded-xl bg-slate-900/90 px-4 pt-24 backdrop-blur-sm" role="status"><div className="w-full max-w-sm rounded-2xl border border-indigo-500/40 bg-slate-950/95 p-4 shadow-2xl"><span className="flex items-center justify-center gap-3 text-sm font-semibold text-indigo-300"><LoaderCircle size={24} className="animate-spin"/>{t('budget.form.scanning')}</span><div className="mt-4 space-y-2">{receiptImages.map(image => <div key={image.id} className="flex items-center gap-3 rounded-lg bg-slate-900 px-3 py-2"><img src={image.previewUrl} alt="" className="size-10 rounded-md object-cover"/><span className="min-w-0 flex-1 truncate text-xs text-slate-300">{image.file.name}</span><span className="shrink-0 text-xs font-semibold text-indigo-300">{t(`budget.scan.status.${image.status}`)}</span></div>)}</div></div></div>}
           <div className="space-y-3">
             <div onDragEnter={event => { event.preventDefault(); setDraggingReceipt(true); }} onDragOver={event => event.preventDefault()} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingReceipt(false); }} onDrop={handleReceiptDrop} className={`relative overflow-hidden rounded-2xl border-2 border-dashed p-2 transition ${draggingReceipt ? 'border-indigo-400 bg-indigo-500/20' : 'border-indigo-500/40 bg-indigo-500/5'}`}>
               {(draggingReceipt || scanningReceipt) && <span className="scan-beam pointer-events-none absolute inset-x-2 top-0 z-10 h-px bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_16px_3px_rgba(34,211,238,0.75)]"/>}
@@ -487,16 +434,26 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
               <Camera size={19}/><span>{t('budget.form.scanReceipt')}</span>
             </button>
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" disabled={scanningReceipt || saving} onChange={event => void handleFileSelect(event)}/>
+            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" disabled={scanningReceipt || saving} onChange={handleFileSelect}/>
             <p className="text-center text-xs text-slate-500">{t('budget.form.scanHint')}</p>
           </div>
-          {batchItems.length > 0 && <section className="space-y-3 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-3" aria-label={t('budget.form.batchTitle')}>
-            <div><h3 className="text-sm font-bold text-indigo-200">{t('budget.form.batchTitle')}</h3><p className="mt-1 text-xs text-slate-400">{t('budget.form.batchFound', { count: batchItems.length })}</p></div>
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">{batchItems.map(item => <label key={item.id} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${item.selected ? 'border-indigo-500/60 bg-slate-950/70' : 'border-slate-700 bg-slate-900/60'}`}>
-              <input type="checkbox" checked={item.selected} disabled={saving} onChange={event => setBatchItems(current => current.map(candidate => candidate.id === item.id ? { ...candidate, selected: event.target.checked } : candidate))} className="mt-1 size-4 accent-indigo-500"/>
-              <span className="min-w-0 flex-1"><span className="flex justify-between gap-2 text-sm"><strong className="truncate text-white">{item.transaction.description}</strong><span className={item.transaction.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}>{currency.format(item.transaction.amount)}</span></span><span className="mt-1 block text-xs text-slate-400">{item.transaction.transactionDate} {item.transaction.transaction_time} · {t(`budget.categories.${item.transaction.category}`)}</span>{item.duplicate && <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-400"><AlertTriangle size={13}/>{t('budget.form.batchDuplicate')}</span>}</span>
-            </label>)}</div>
-            <div className="grid grid-cols-2 gap-2"><button type="button" disabled={saving} onClick={() => setBatchItems([])} className="min-h-11 rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-300 hover:bg-slate-800">{t('common.cancel')}</button><button type="button" disabled={saving || !batchItems.some(item => item.selected)} onClick={() => void importBatch()} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{saving && <LoaderCircle size={16} className="animate-spin"/>}{t('budget.form.batchImport', { count: batchItems.filter(item => item.selected).length })}</button></div>
+          {selectionMessage && <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">{selectionMessage}</p>}
+          {receiptImages.length > 0 && <section className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/50 p-3" aria-label={t('budget.scan.previewTitle')}>
+            <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-white">{t('budget.scan.previewTitle')}</h3><p className="mt-1 text-xs text-slate-400">{t('budget.scan.selectedCount', { count: receiptImages.length, max: MAX_RECEIPT_IMAGES })}</p></div><button type="button" disabled={scanningReceipt || saving} onClick={clearBatch} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50">{t('budget.scan.clear')}</button></div>
+            <div className="space-y-2">{receiptImages.map(image => <article key={image.id} className="rounded-xl border border-slate-700 bg-slate-900/80 p-2.5"><div className="flex items-center gap-3"><img src={image.previewUrl} alt={image.file.name} className="size-14 shrink-0 rounded-lg bg-slate-950 object-cover"/><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{image.file.name}</p><p className={`mt-1 text-xs font-semibold ${image.status === 'failed' ? 'text-rose-400' : image.status === 'done' ? 'text-emerald-400' : 'text-indigo-300'}`}>{t(`budget.scan.status.${image.status}`)}</p></div>{image.status === 'pending' && <button type="button" disabled={scanningReceipt} onClick={() => removeImage(image.id)} className="flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-50" aria-label={t('budget.scan.remove', { name: image.file.name })}><X size={17}/></button>}{image.status === 'failed' && <button type="button" disabled={scanningReceipt || saving} onClick={() => void retryReceiptImage(image.id)} className="shrink-0 rounded-lg bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/25 disabled:opacity-50">{t('budget.scan.retry')}</button>}</div>{image.error && <p role="alert" className="mt-2 text-xs leading-5 text-rose-300">{image.error}</p>}</article>)}</div>
+            {receiptImages.some(image => image.status === 'pending') && <button type="button" disabled={scanningReceipt || saving} onClick={() => void startReceiptScan()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"><Camera size={17}/>{t('budget.scan.process', { count: receiptImages.filter(image => image.status === 'pending').length })}</button>}
+          </section>}
+          {allFinished && reviewTransactions.length === 0 && <p className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-400">{t('budget.scan.noSuccessfulTransactions')}</p>}
+          {allFinished && reviewTransactions.length > 0 && !(receiptImages.length === 1 && reviewTransactions.length === 1) && <section className="space-y-3 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-3" aria-label={t('budget.scan.reviewTitle')}>
+            <div><h3 className="text-sm font-bold text-indigo-200">{t('budget.scan.reviewTitle')}</h3><p className="mt-1 text-xs text-slate-400">{t('budget.form.batchFound', { count: reviewTransactions.length })}</p></div>
+            <div className="max-h-[34rem] space-y-3 overflow-y-auto pr-1">{reviewTransactions.map(item => { const source = receiptImages.find(image => image.id === item.imageId); return <article key={item.id} className={`space-y-3 rounded-xl border p-3 ${item.selected ? 'border-indigo-500/60 bg-slate-950/70' : 'border-slate-700 bg-slate-900/60'}`}>
+              <div className="flex items-start gap-3"><input type="checkbox" checked={item.selected} disabled={saving} onChange={event => toggleReviewTransaction(item.id, event.target.checked)} className="mt-1 size-4 accent-indigo-500"/><div className="min-w-0 flex-1"><p className="truncate text-xs text-slate-400">{t('budget.scan.source')}: {source?.file.name ?? t('budget.scan.unknownSource')}</p>{item.duplicate && <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-400"><AlertTriangle size={13}/>{t('budget.form.batchDuplicate')}</span>}</div></div>
+              <div className="grid grid-cols-2 gap-2"><label className="text-xs text-slate-400"><span className="mb-1 block">{t('budget.form.type')}</span><select value={item.transaction.type} disabled={saving} onChange={event => { const type = event.target.value as TransactionType; updateReviewTransaction(item.id, { type, category: categoriesForType(type)[0] }); }} className="min-h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"><option value="expense">{t('budget.expense')}</option><option value="income">{t('budget.income')}</option></select></label><label className="text-xs text-slate-400"><span className="mb-1 block">{t('budget.form.amount')}</span><input type="number" min="0.01" step="0.01" value={item.transaction.amount || ''} disabled={saving} onChange={event => updateReviewTransaction(item.id, { amount: event.target.valueAsNumber, originalAmount: event.target.valueAsNumber })} className="min-h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"/></label></div>
+              <label className="block text-xs text-slate-400"><span className="mb-1 block">{t('budget.form.description')}</span><input maxLength={160} value={item.transaction.description} disabled={saving} onChange={event => updateReviewTransaction(item.id, { description: event.target.value })} className="min-h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"/></label>
+              <div className="grid grid-cols-2 gap-2"><label className="text-xs text-slate-400"><span className="mb-1 block">{t('budget.form.date')}</span><input type="date" value={item.transaction.transactionDate} disabled={saving} onChange={event => updateReviewTransaction(item.id, { transactionDate: event.target.value })} className="min-h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"/></label><label className="text-xs text-slate-400"><span className="mb-1 block">{t('budget.form.time')}</span><input type="time" value={item.transaction.transaction_time ?? ''} disabled={saving} onChange={event => updateReviewTransaction(item.id, { transaction_time: event.target.value })} className="min-h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white"/></label></div>
+              <label className="block text-xs text-slate-400"><span className="mb-1 block">{t('budget.form.category')}</span><select value={item.transaction.category} disabled={saving} onChange={event => updateReviewTransaction(item.id, { category: event.target.value as TransactionCategory })} className="min-h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-white">{categoriesForType(item.transaction.type).map(category => <option key={category} value={category}>{t(`budget.categories.${category}`)}</option>)}</select></label>
+            </article>; })}</div>
+            <button type="button" disabled={saving || selectedTransactions.length === 0} onClick={() => void importBatch()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{saving && <LoaderCircle size={16} className="animate-spin"/>}{t('budget.form.batchImport', { count: selectedTransactions.length })}</button>
           </section>}
           {duplicateMatch?.matchedTransaction && <div role="alert" className="rounded-xl border border-amber-500/70 bg-amber-500/15 p-4 text-amber-100 shadow-lg shadow-amber-950/20"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={21}/><div><p className="font-bold">{t('budget.form.duplicateWarningTitle')}</p><p className="mt-1 text-sm text-amber-200">{t('budget.form.duplicateWarningDesc', { date: duplicateMatch.matchedTransaction.date ?? duplicateMatch.matchedTransaction.transactionDate ?? '', amount: currency.format(duplicateMatch.matchedTransaction.amount), merchant: duplicateMatch.matchedTransaction.description })}</p></div></div></div>}
           <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.type')}</legend><div className="grid grid-cols-2 rounded-xl bg-slate-950 p-1">{(['income', 'expense'] as TransactionType[]).map(type => <button key={type} type="button" onClick={() => setForm(current => ({ ...current, type, category: categoriesForType(type)[0] }))} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${form.type === type ? type === 'income' ? 'bg-emerald-700 text-white shadow' : 'bg-rose-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>{t(`budget.${type}`)}</button>)}</div></fieldset>

@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Sidebar } from './components/layout/Sidebar';
 import { EnvironmentBadge } from './components/common/EnvironmentBadge';
 import { Header } from './components/layout/Header';
-import { BottomNav } from './components/layout/BottomNav';
 import { CommandPalette } from './components/common/CommandPalette';
 import { PWAUpdateToast } from './components/common/PWAUpdateToast';
 import { Layout } from './components/layout/Layout';
@@ -19,7 +18,7 @@ const AboutMePage = lazy(() => import('./pages/AboutMePage').then(module => ({ d
 const Home = lazy(() => import('./pages/Home').then(module => ({ default: module.Home })));
 const BudgetPage = lazy(() => import('./pages/BudgetPage').then(module => ({ default: module.BudgetPage })));
 const AnimePage = lazy(() => import('./pages/AnimePage').then(module => ({ default: module.AnimePage })));
-const StockAnalysisPage = lazy(() => import('./pages/StockAnalysisPage').then(module => ({ default: module.StockAnalysisPage })));
+const NotesPage = lazy(() => import('./pages/NotesPage').then(module => ({ default: module.NotesPage })));
 
 const EDGE_SWIPE_MIN = 16;
 const EDGE_SWIPE_MAX = 80;
@@ -129,17 +128,16 @@ function AuthenticatedApp() {
       <EnvironmentBadge />
       <Sidebar activeTab={activeTab} setActiveTab={changeTab} isCollapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed(current => !current)} mobileOpen={isMobileSidebarOpen} onMobileClose={() => setIsMobileSidebarOpen(false)} />
 
-      <main className={`w-full min-w-0 flex-1 px-4 pb-24 pt-4 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-4 md:p-8 ${isSidebarCollapsed ? 'md:ml-16' : 'md:ml-64'}`}>
+      <main className={`w-full min-w-0 flex-1 p-4 transition-[margin] duration-300 ease-in-out sm:px-6 sm:py-4 md:p-8 ${isSidebarCollapsed ? 'md:ml-16' : 'md:ml-64'}`}>
         <Header onOpenMenu={() => setIsMobileSidebarOpen(true)} onOpenTools={() => setIsMobileToolsOpen(true)} />
         <Suspense fallback={<div className="flex min-h-72 items-center justify-center text-sm text-slate-500">{t('common.loadingWorkspace')}</div>}>
           {activeTab === 'dashboard' && <Home onNavigate={navigateFromHome} />}
           {activeTab === 'profile' && <AboutMePage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} resumeExportToken={resumeExportToken} />}
           {activeTab === 'budget' && <BudgetPage toolsOpen={isMobileToolsOpen} onCloseTools={() => setIsMobileToolsOpen(false)} />}
           {activeTab === 'anime' && <AnimePage />}
-          {activeTab === 'stocks' && <StockAnalysisPage />}
+          {activeTab === 'notes' && <NotesPage />}
         </Suspense>
       </main>
-      <BottomNav activeTab={activeTab} onTabChange={changeTab} />
       <CommandPalette onNavigate={navigateFromHome} />
       <PWAUpdateToast />
     </Layout>

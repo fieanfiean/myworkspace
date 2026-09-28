@@ -228,10 +228,6 @@ body {
   box-shadow: none;
 }
 
-.trading-grid {
-  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 59px, rgba(99, 102, 241, 0.06) 60px);
-}
-
 @media (min-width: 640px) {
   .profile-header-card { padding: 2rem; }
   .exp-card, .edu-card { margin-left: 2.5rem; }
@@ -275,7 +271,7 @@ html:not(.dark) .text-slate-500 { color: #64748b; }
 html:not(.dark) :is(.bg-blue-600,.bg-indigo-600,.bg-red-600,.bg-rose-800,.bg-emerald-700,.btn-primary-lg),
 html:not(.dark) :is(.bg-blue-600,.bg-indigo-600,.bg-red-600,.bg-rose-800,.bg-emerald-700,.btn-primary-lg) * { color: #ffffff; }
 
-/* Bright dashboard surfaces shared by Budget, Anime, and Stock Analysis. */
+/* Bright dashboard surfaces shared by Budget and Anime. */
 html:not(.dark) .dashboard-light-page {
   color: #0f172a;
 }

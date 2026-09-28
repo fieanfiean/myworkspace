@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { BarChart3, ChevronUp, Clapperboard, KeyRound, LayoutDashboard, LoaderCircle, LogOut, PanelLeftClose, PanelLeftOpen, User, Wallet, X } from 'lucide-react';
+import { ChevronUp, Clapperboard, KeyRound, LayoutDashboard, LoaderCircle, LogOut, NotebookPen, PanelLeftClose, PanelLeftOpen, User, Wallet, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ChangePasswordModal } from '@/components/account/ChangePasswordModal';
 import { useAuth } from '@/hooks/useAuth';
 import { getProfileSummary } from '@/services/profileService';
 import type { Profile } from '@/types/profile';
 
-export type Tab = 'dashboard' | 'profile' | 'budget' | 'anime' | 'stocks';
+export type Tab = 'dashboard' | 'profile' | 'budget' | 'anime' | 'notes';
 
 interface SidebarProps {
   activeTab: Tab;
@@ -57,14 +57,14 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
   const accountInitials = displayName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || '?';
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     void getProfileSummary(user.id).then(data => {
       if (data) setProfile(data);
     });
     const updateProfile = (event: Event) => setProfile((event as CustomEvent<Profile>).detail);
     window.addEventListener('profile-updated', updateProfile);
     return () => window.removeEventListener('profile-updated', updateProfile);
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -111,7 +111,7 @@ export function Sidebar({ activeTab, setActiveTab, isCollapsed, onToggle, mobile
           <NavItem active={activeTab === 'profile'} collapsed={isCollapsed} icon={User} label={t('sidebar.profile')} onClick={() => selectTab('profile')} />
           <NavItem active={activeTab === 'budget'} collapsed={isCollapsed} icon={Wallet} label={t('sidebar.budget')} onClick={() => selectTab('budget')} />
           <NavItem active={activeTab === 'anime'} collapsed={isCollapsed} icon={Clapperboard} label={t('sidebar.anime')} onClick={() => selectTab('anime')} />
-          <NavItem active={activeTab === 'stocks'} collapsed={isCollapsed} icon={BarChart3} label={t('sidebar.stocks')} onClick={() => selectTab('stocks')} />
+          <NavItem active={activeTab === 'notes'} collapsed={isCollapsed} icon={NotebookPen} label={t('sidebar.notes')} onClick={() => selectTab('notes')} />
         </nav>
       </div>
 

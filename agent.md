@@ -116,22 +116,20 @@
 - Anime poster cards gain a thin Indigo hover ring, while the active player raises the surrounding cinema overlay to a centered `indigo-500/20` glow.
 - Anime playback progress is stored per title in `localStorage` and restores both the last episode and playback time. The player supports Space play/pause, arrow-key seeking and volume, F fullscreen, N/P episode navigation, and Escape close while ignoring editable form targets.
 
-### F. Stock Analysis
+### F. Notes
 
-- `src/pages/StockAnalysisPage.tsx` is a lazy-loaded responsive dark stock dashboard backed by mock data in `src/data/stockMockData.ts`. Reusable components under `src/components/Stock/` provide ticker search/status, stock summary metrics, candlestick and volume views, AI insights, quarterly grouped bars, and a scrollable watchlist with sparklines.
-- Interactive stock snapshots live in `src/data/mockData.ts`. `StockAnalysisPage` owns the selected ticker, and quick tags, valid ticker search submissions, and watchlist rows update the summary banner plus candlestick/volume history with an active-selection treatment.
-- Watchlist sparklines use Recharts gradient-filled areas, and the AI Insights card uses an animated violet-to-blue gradient border with a restrained shimmer.
-- Stock price charts use a faint repeating horizontal terminal grid; the moving-average region and watchlist Area sparklines use a maximum 15% gradient fill.
-- `services/stock-api` is an independent FastAPI + yfinance service. It exposes health, combined dashboard, quote, OHLCV history, and key-statistics endpoints under `/api/stocks/{ticker}`; requests validate ticker/period/interval inputs, cache upstream responses briefly, return consistent JSON errors, and allow configurable CORS origins. Yahoo Finance data is treated as potentially delayed market data rather than an exchange-grade real-time feed.
-- Budget Tracker, Anime Stream, and Stock Analysis share the `dashboard-light-page` light-theme treatment: `#F8FAFC` page backgrounds, white cards, slate-200 borders, subtle shadows, slate-900 primary text, slate-500 secondary text, and light chart grids/tooltips. Explicit `dark:` styles preserve their original dark presentation.
+- Notes is a private authenticated workspace for short structured text entries stored in Supabase.
+- Notes supports optional titles, plain-text content, tags, pinned ordering, client-side search and tag filtering, debounced autosave, manual save, and confirmed deletion.
+- Notes are user-owned through `user_id` and protected by per-operation RLS policies; binary attachments, sharing, rich text, realtime synchronization, and offline editing are outside its scope.
+- Budget Tracker and Anime Stream share the `dashboard-light-page` light-theme treatment: `#F8FAFC` page backgrounds, white cards, slate-200 borders, subtle shadows, slate-900 primary text, slate-500 secondary text, and light chart grids/tooltips. Explicit `dark:` styles preserve their original dark presentation.
 - The shared dark palette uses `#0B0F17` for the page shell and `#131927` for cards, with `slate-800/80` borders and Indigo (`indigo-600`, `indigo-500/15`, `indigo-400`) as the primary navigation/action accent. Profile badges use translucent Slate surfaces rather than feature colors.
 
 ### G. Home Dashboard
 
-- `src/pages/Home.tsx` is the authenticated Dashboard landing page. It combines a live MYT welcome header, current-month Supabase budget totals and trend lines, the latest `anime_progress_*` continuation record, AAPL/NVDA mock watchlist sparklines, profile headline/skills, automatic Resume export navigation, and quick links into Budget, Anime, and Profile workflows.
+- `src/pages/Home.tsx` is the authenticated Dashboard landing page. It combines a live MYT welcome header, current-month Supabase budget totals and trend lines, the latest `anime_progress_*` continuation record, recent notes, profile headline/skills, automatic Resume export navigation, and quick links into Budget, Anime, Notes, and Profile workflows.
 - Home renders a fixed, non-interactive Ziwei Enclosure atmosphere layer with purple/indigo blurred orbs and a cyan radial-dot field. Dashboard cards use translucent `#131927/70` surfaces, backdrop blur, `slate-800/80` borders, and subtle Indigo hover borders so the ambient layer remains visible beneath them.
-- Mobile screens below `sm` use the safe-area-aware glass `BottomNav` for the five primary tabs. The global Radix Dialog `CommandPalette` opens with Cmd/Ctrl+K, fuzzy-filters bilingual page/action commands, and reuses the app's navigation intents for Budget tools and other destinations.
-- `src/components/layout/Layout.tsx` is the authenticated global shell. It owns the light/dark radial dot grid and responsive Indigo/Sky/Purple ambient orbs, while `.ziwei-layout .rounded-2xl.border` in `index.css` provides the shared translucent glass-card treatment across Profile, Budget, Anime, Stock, and Home.
+- The global Radix Dialog `CommandPalette` opens with Cmd/Ctrl+K, fuzzy-filters bilingual page/action commands, and reuses the app's navigation intents for Budget tools and other destinations.
+- `src/components/layout/Layout.tsx` is the authenticated global shell. It owns the light/dark radial dot grid and responsive Indigo/Sky/Purple ambient orbs, while `.ziwei-layout .rounded-2xl.border` in `index.css` provides the shared translucent glass-card treatment across Profile, Budget, Anime, Notes, and Home.
 
 - `src/pages/AnimePage.tsx` 提供独立的暗色 AniStream 媒体浏览页，通过 Sidebar 的 `Anime Stream` 页签进入；标题搜索及资源类型、地区、题材、状态、年份组合筛选均在 Supabase 服务端执行。TYPE 按 `region_category` 模糊匹配（电影 `%片%`、剧集 `%剧%`、动漫 `%动漫%`、纪录片为 `%记录片%` 或 `%综艺%`），REGION 查询 `area`，YEAR 查询 `year`。列表按 `updated_at DESC` 每页读取 24 条并以 Load More 追加，使用 exact count 判断剩余页。页面包含 300ms 搜索防抖、过期请求防覆盖、可折叠筛选栏、Loading Skeleton、错误重试、组合筛选空状态、动态媒体角标与响应式 2–8 列封面网格，不使用 Featured Hero。
 - `src/components/AnimePlayerModal.tsx` 使用 Safari 原生 HLS 或按需动态加载的 `hls.js` 播放 HTTPS `.m3u8`，支持切集、Escape / 遮罩 / 按钮关闭及 fatal network/media 恢复。
