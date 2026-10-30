@@ -9,6 +9,7 @@ interface WatchProgressInput {
   episodeLabel: string;
   positionSeconds: number;
   durationSeconds: number;
+  episodeCount: number;
 }
 
 interface LocalPlaybackProgress {
@@ -61,6 +62,7 @@ export function useWatchProgress(input: WatchProgressInput) {
       episodeLabel: current.episodeLabel,
       positionSeconds: Math.max(0, current.positionSeconds),
       durationSeconds: Number.isFinite(current.durationSeconds) ? Math.max(0, current.durationSeconds) : undefined,
+      episodeCount: Math.max(0, current.episodeCount),
     });
     lastRemoteWriteRef.current = Date.now();
 
@@ -100,10 +102,10 @@ export function useWatchProgress(input: WatchProgressInput) {
     const marker = `${input.anime.external_id}:${input.episodeIndex}`;
     if (!user || !input.anime.external_id || ratio < 0.9 || watchedMarkerRef.current === marker) return;
     watchedMarkerRef.current = marker;
-    void markEpisodeWatched(input.anime.external_id, input.episodeIndex).catch(() => {
+    void markEpisodeWatched(input.anime.external_id, input.episodeIndex, input.episodeCount).catch(() => {
       watchedMarkerRef.current = null;
     });
-  }, [input.anime.external_id, input.durationSeconds, input.episodeIndex, input.positionSeconds, user]);
+  }, [input.anime.external_id, input.durationSeconds, input.episodeCount, input.episodeIndex, input.positionSeconds, user]);
 
   useEffect(() => () => {
     writeLocal();

@@ -64,7 +64,6 @@ function normalizeAnime(value: unknown): Anime | null {
       : [],
     episodes: Array.isArray(row.episodes) ? row.episodes.filter(isEpisode) : [],
     episode_count: Number.isFinite(Number(row.episode_count)) ? Math.max(0, Number(row.episode_count)) : 0,
-    watched_episodes: Number.isFinite(Number(row.watched_episodes)) ? Math.max(0, Number(row.watched_episodes)) : 0,
     status: row.status === "completed" ? "completed" : "ongoing",
     category: typeof row.region_category === "string" ? row.region_category : null,
     region_category: typeof row.region_category === "string" ? row.region_category : null,

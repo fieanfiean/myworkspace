@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBudgetTransactions } from '@/hooks/useBudgetTransactions';
 import { useProfileData } from '@/hooks/useProfileData';
 import { useNotes } from '@/hooks/useNotes';
+import { supabase } from '@/lib/supabase';
 import { getProfileSummary } from '@/services/profileService';
 import { listProgress, type WatchProgress } from '@/services/watchProgressService';
 import type { Anime } from '@/types/anime';
@@ -40,27 +41,45 @@ function latestAnimeProgress(): StoredAnimeProgress | null {
   }
 }
 
-function progressToHomeItem(progress: WatchProgress): StoredAnimeProgress {
+async function findCatalogAnime(progress: WatchProgress): Promise<Anime | null> {
+  const catalogColumns = 'id,external_id,source,title,cover_url,description,rating,year,genres,episodes,episode_count,status,region_category,area,release_date,source_site,updated_at';
+  const catalogQuery = () => supabase.from('animes')
+    .select(catalogColumns)
+    .eq('external_id', progress.anime_external_id)
+    .order('source', { ascending: true })
+    .limit(1);
+
+  if (progress.anime_title) {
+    const { data, error } = await catalogQuery().eq('title', progress.anime_title).maybeSingle();
+    if (!error && data) return data as Anime;
+  }
+
+  const { data, error } = await catalogQuery().maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as Anime | null;
+}
+
+async function progressToHomeItem(progress: WatchProgress): Promise<StoredAnimeProgress> {
+  const catalog = await findCatalogAnime(progress).catch(() => null);
   const anime: Anime = {
-    id: progress.anime_external_id,
-    external_id: progress.anime_external_id,
-    source: 'ffzy5',
-    title: progress.anime_title ?? progress.anime_external_id,
-    cover_url: progress.anime_cover_url,
-    description: null,
-    rating: 0,
-    year: new Date().getFullYear(),
-    genres: [],
-    episodes: [],
-    episode_count: Math.max(progress.watched_episodes, progress.current_episode_index + 1),
-    watched_episodes: progress.watched_episodes,
-    status: progress.status === 'completed' ? 'completed' : 'ongoing',
-    category: null,
-    region_category: null,
-    area: null,
-    release_date: null,
-    source_site: null,
-    updated_at: progress.updated_at,
+    id: catalog?.id ?? progress.anime_external_id,
+    external_id: catalog?.external_id ?? progress.anime_external_id,
+    source: catalog?.source ?? '',
+    title: catalog?.title ?? progress.anime_title ?? progress.anime_external_id,
+    cover_url: catalog?.cover_url ?? progress.anime_cover_url,
+    description: catalog?.description ?? null,
+    rating: catalog?.rating ?? 0,
+    year: catalog?.year ?? new Date().getFullYear(),
+    genres: catalog?.genres ?? [],
+    episodes: catalog?.episodes ?? [],
+    episode_count: catalog?.episode_count ?? 0,
+    status: catalog?.status ?? (progress.status === 'completed' ? 'completed' : 'ongoing'),
+    category: catalog?.category ?? catalog?.region_category ?? null,
+    region_category: catalog?.region_category ?? null,
+    area: catalog?.area ?? null,
+    release_date: catalog?.release_date ?? null,
+    source_site: catalog?.source_site ?? null,
+    updated_at: catalog?.updated_at ?? progress.updated_at,
   };
   return {
     anime,
@@ -103,7 +122,7 @@ export function Home({ onNavigate }: HomeProps) {
     }
     try {
       const [latest] = (await listProgress()).slice(0, 1);
-      setContinueWatching(latest ? progressToHomeItem(latest) : null);
+      setContinueWatching(latest ? await progressToHomeItem(latest) : null);
     } catch {
       setContinueWatching(null);
     }
@@ -157,19 +176,19 @@ export function Home({ onNavigate }: HomeProps) {
     </section>
 
     <section className="grid gap-5 xl:grid-cols-12">
-      <article className={`${cardClass} p-5 xl:col-span-7`}>
+      <article className={`${cardClass} order-2 p-5 xl:order-1 xl:col-span-7`}>
         <div className="mb-5 flex items-center justify-between"><div><h2 className="font-bold text-slate-900 dark:text-white">{t('home.budget.title')}</h2><p className="text-xs text-slate-500">{t('home.budget.subtitle')}</p></div><button onClick={() => onNavigate('budget')} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-indigo-500/15 dark:hover:text-indigo-400" aria-label={t('home.view')}><ArrowRight size={19}/></button></div>
         <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-emerald-200/70 bg-emerald-50 p-4 backdrop-blur-xl transition-all dark:border-slate-800/80 dark:bg-[#131927]/70 dark:hover:border-indigo-500/30"><span className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400"><TrendingUp size={15}/>{t('home.budget.income')}</span><strong className="mt-2 block text-2xl text-slate-950 dark:text-white">{budgetLoading ? '—' : currency.format(monthSummary.income)}</strong></div><div className="rounded-2xl border border-rose-200/70 bg-rose-50 p-4 backdrop-blur-xl transition-all dark:border-slate-800/80 dark:bg-[#131927]/70 dark:hover:border-indigo-500/30"><span className="flex items-center gap-2 text-xs font-semibold text-rose-700 dark:text-rose-400"><TrendingDown size={15}/>{t('home.budget.expense')}</span><strong className="mt-2 block text-2xl text-slate-950 dark:text-white">{budgetLoading ? '—' : currency.format(monthSummary.expense)}</strong></div></div>
         <div className="mt-4 h-28"><ResponsiveContainer width="100%" height="100%"><LineChart data={monthSummary.trend}><Tooltip contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0', fontSize: 12 }}/><Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} dot={false}/><Line type="monotone" dataKey="expense" stroke="#f43f5e" strokeWidth={2} dot={false}/></LineChart></ResponsiveContainer></div>
       </article>
 
-      <article className={`${cardClass} overflow-hidden xl:col-span-5`}>
+      <article className={`${cardClass} order-3 overflow-hidden xl:order-2 xl:col-span-5`}>
         {continueWatching?.anime ? <div className="grid h-full min-h-72 grid-cols-[8rem_1fr]"><img src={continueWatching.anime.cover_url || ''} alt="" className="h-full w-full object-cover"/><div className="flex flex-col justify-between p-5"><div><span className="text-xs font-bold uppercase tracking-wider text-indigo-400">{t('home.anime.kicker')}</span><h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">{continueWatching.anime.title}</h2><p className="mt-2 text-sm text-slate-500">{continueWatching.episode || `第 ${(continueWatching.episodeIndex ?? 0) + 1} 集`} · {t('home.anime.resume', { time: Math.floor(continueWatching.currentTime / 60) })}</p><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500" style={{ width: `${continueWatching.durationSeconds && continueWatching.durationSeconds > 0 ? Math.min(100, continueWatching.currentTime / continueWatching.durationSeconds * 100) : 0}%` }} /></div></div><button onClick={resumeAnime} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-500"><Clapperboard size={17}/>{t('home.anime.continue')}</button></div></div> : <div className="flex min-h-72 flex-col items-center justify-center p-6 text-center"><Clapperboard className="mb-3 text-indigo-400" size={32}/><h2 className="font-bold text-slate-900 dark:text-white">{t('home.anime.emptyTitle')}</h2><p className="mt-2 text-sm text-slate-500">{t('home.anime.empty')}</p><button onClick={() => onNavigate('anime')} className="mt-5 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-500">{t('home.anime.browse')}</button></div>}
       </article>
 
-      <article className={`${cardClass} p-5 xl:col-span-7`}><div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="font-bold text-slate-900 dark:text-white">{t('home.notes.title')}</h2><p className="text-xs text-slate-500">{t('home.notes.subtitle')}</p></div><button type="button" onClick={() => onNavigate('notes')} className="flex min-h-10 items-center gap-2 rounded-xl bg-indigo-500/10 px-3 text-xs font-semibold text-indigo-500 hover:bg-indigo-500/20 dark:text-indigo-300"><Plus size={15}/>{t('home.notes.new')}</button></div>{notesLoading ? <div className="space-y-2">{Array.from({ length: 3 }, (_, index) => <div key={index} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/70"/>)}</div> : recentNotes.length === 0 ? <button type="button" onClick={() => onNavigate('notes')} className="flex min-h-44 w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 text-center dark:border-slate-700"><NotebookPen size={28} className="text-indigo-400"/><span className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-300">{t('home.notes.empty')}</span></button> : <div className="space-y-2">{recentNotes.map(note => { const label = note.title?.trim() || note.content?.split(/\r?\n/).find(line => line.trim())?.trim() || t('notes.untitled'); return <button type="button" key={note.id} onClick={() => onNavigate('notes')} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 text-left hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-800 dark:bg-slate-950/30 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10"><span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400"><NotebookPen size={17}/></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900 dark:text-white">{label}</strong><span className="mt-0.5 block text-xs text-slate-500">{new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(note.updated_at))}</span></span>{note.is_pinned && <span className="text-xs font-semibold text-indigo-400">{t('notes.pinned')}</span>}</button>; })}</div>}</article>
+      <article className={`${cardClass} order-1 p-5 xl:order-3 xl:col-span-7`}><div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="font-bold text-slate-900 dark:text-white">{t('home.notes.title')}</h2><p className="text-xs text-slate-500">{t('home.notes.subtitle')}</p></div><button type="button" onClick={() => onNavigate('notes')} className="flex min-h-10 items-center gap-2 rounded-xl bg-indigo-500/10 px-3 text-xs font-semibold text-indigo-500 hover:bg-indigo-500/20 dark:text-indigo-300"><Plus size={15}/>{t('home.notes.new')}</button></div>{notesLoading ? <div className="space-y-2">{Array.from({ length: 3 }, (_, index) => <div key={index} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/70"/>)}</div> : recentNotes.length === 0 ? <button type="button" onClick={() => onNavigate('notes')} className="flex min-h-44 w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 text-center dark:border-slate-700"><NotebookPen size={28} className="text-indigo-400"/><span className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-300">{t('home.notes.empty')}</span></button> : <div className="space-y-2">{recentNotes.map(note => { const label = note.title?.trim() || note.content?.split(/\r?\n/).find(line => line.trim())?.trim() || t('notes.untitled'); return <button type="button" key={note.id} onClick={() => onNavigate('notes')} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 text-left hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-800 dark:bg-slate-950/30 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10"><span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400"><NotebookPen size={17}/></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900 dark:text-white">{label}</strong><span className="mt-0.5 block text-xs text-slate-500">{new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(note.updated_at))}</span></span>{note.is_pinned && <span className="text-xs font-semibold text-indigo-400">{t('notes.pinned')}</span>}</button>; })}</div>}</article>
 
-      <article className={`${cardClass} p-5 xl:col-span-5`}><span className="text-xs font-bold uppercase tracking-wider text-indigo-400">{t('home.profile.kicker')}</span><h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">{profile?.headline || profileData.experiences[0]?.title || t('home.profile.fallback')}</h2><div className="mt-4 flex flex-wrap gap-2">{skills.length ? skills.map(skill => <span key={skill} className="rounded-full border border-slate-700/50 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-300">{skill}</span>) : <span className="text-sm text-slate-500">{t('home.profile.noSkills')}</span>}</div><button onClick={() => onNavigate('profile', 'resume')} className="mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-500/15 text-sm font-semibold text-indigo-400 hover:bg-indigo-500/25"><FileDown size={17}/>{t('home.profile.export')}</button></article>
+      <article className={`${cardClass} order-4 p-5 xl:order-4 xl:col-span-5`}><span className="text-xs font-bold uppercase tracking-wider text-indigo-400">{t('home.profile.kicker')}</span><h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">{profile?.headline || profileData.experiences[0]?.title || t('home.profile.fallback')}</h2><div className="mt-4 flex flex-wrap gap-2">{skills.length ? skills.map(skill => <span key={skill} className="rounded-full border border-slate-700/50 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-300">{skill}</span>) : <span className="text-sm text-slate-500">{t('home.profile.noSkills')}</span>}</div><button onClick={() => onNavigate('profile', 'resume')} className="mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-500/15 text-sm font-semibold text-indigo-400 hover:bg-indigo-500/25"><FileDown size={17}/>{t('home.profile.export')}</button></article>
     </section>
 
     <section className={`${cardClass} p-4`}><h2 className="mb-3 px-1 text-sm font-bold text-slate-900 dark:text-white">{t('home.quick.title')}</h2><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[

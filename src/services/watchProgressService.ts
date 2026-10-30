@@ -12,7 +12,6 @@ export interface WatchProgress {
   current_episode_label: string | null;
   position_seconds: number;
   duration_seconds: number | null;
-  watched_episodes: number;
   status: WatchStatus;
   last_watched_at: string;
   created_at: string;
@@ -27,10 +26,10 @@ export interface UpsertProgressPayload {
   episodeLabel?: string;
   positionSeconds: number;
   durationSeconds?: number;
-  watchedEpisodes?: number;
+  episodeCount: number;
 }
 
-const progressColumns = 'id,user_id,anime_external_id,anime_title,anime_cover_url,current_episode_index,current_episode_label,position_seconds,duration_seconds,watched_episodes,status,last_watched_at,created_at,updated_at';
+const progressColumns = 'id,user_id,anime_external_id,anime_title,anime_cover_url,current_episode_index,current_episode_label,position_seconds,duration_seconds,status,last_watched_at,created_at,updated_at';
 
 async function currentUserId(): Promise<string | null> {
   const { data, error } = await supabase.auth.getUser();
@@ -84,54 +83,28 @@ export function listCompleted(): Promise<WatchProgress[]> {
 export async function upsertProgress(payload: UpsertProgressPayload): Promise<WatchProgress | null> {
   const userId = await currentUserId();
   if (!userId) return null;
-  const existing = await getProgressForUser(userId, payload.animeExternalId);
-  const now = new Date().toISOString();
-  const watchedEpisodes = Math.max(existing?.watched_episodes ?? 0, payload.watchedEpisodes ?? 0);
-  const { data, error } = await supabase.from('anime_watch_progress').upsert({
-    user_id: userId,
-    anime_external_id: payload.animeExternalId,
-    ...(payload.animeTitle !== undefined && { anime_title: payload.animeTitle }),
-    ...(payload.animeCoverUrl !== undefined && { anime_cover_url: payload.animeCoverUrl }),
-    current_episode_index: Math.max(0, Math.floor(payload.episodeIndex)),
-    ...(payload.episodeLabel !== undefined && { current_episode_label: payload.episodeLabel }),
-    position_seconds: Math.max(0, Math.floor(payload.positionSeconds)),
-    ...(payload.durationSeconds !== undefined && { duration_seconds: Math.max(0, Math.floor(payload.durationSeconds)) }),
-    watched_episodes: watchedEpisodes,
-    last_watched_at: now,
-  }, { onConflict: 'user_id,anime_external_id' }).select(progressColumns).single();
+  const { data, error } = await supabase.rpc('save_anime_watch_progress', {
+    p_anime_external_id: payload.animeExternalId,
+    p_anime_title: payload.animeTitle ?? null,
+    p_anime_cover_url: payload.animeCoverUrl ?? null,
+    p_episode_index: Math.max(0, Math.floor(payload.episodeIndex)),
+    p_episode_label: payload.episodeLabel ?? null,
+    p_position_seconds: Math.max(0, Math.floor(payload.positionSeconds)),
+    p_duration_seconds: payload.durationSeconds === undefined ? null : Math.max(0, Math.floor(payload.durationSeconds)),
+    p_episode_count: Math.max(0, Math.floor(payload.episodeCount)),
+  });
   if (error) throw new Error(error.message);
   return data as WatchProgress;
 }
 
-export async function markEpisodeWatched(animeExternalId: string, episodeIndex: number): Promise<void> {
+export async function markEpisodeWatched(animeExternalId: string, episodeIndex: number, episodeCount: number): Promise<void> {
   const userId = await currentUserId();
   if (!userId) return;
-  const existing = await getProgressForUser(userId, animeExternalId);
-  const watchedEpisodes = Math.max(existing?.watched_episodes ?? 0, Math.max(0, Math.floor(episodeIndex)) + 1);
-  const { data: anime, error: animeError } = await supabase.from('animes')
-    .select('episode_count')
-    .eq('external_id', animeExternalId)
-    .maybeSingle();
-  if (animeError) throw new Error(animeError.message);
-  const episodeCount = Number(anime?.episode_count) || 0;
-  const status: WatchStatus = episodeCount > 0 && watchedEpisodes >= episodeCount ? 'completed' : 'watching';
-  if (!existing) {
-    const { error } = await supabase.from('anime_watch_progress').insert({
-      user_id: userId,
-      anime_external_id: animeExternalId,
-      current_episode_index: Math.max(0, Math.floor(episodeIndex)),
-      watched_episodes: watchedEpisodes,
-      status,
-      last_watched_at: new Date().toISOString(),
-    });
-    if (error) throw new Error(error.message);
-    return;
-  }
-  const { error } = await supabase.from('anime_watch_progress').update({
-    watched_episodes: watchedEpisodes,
-    status,
-    last_watched_at: new Date().toISOString(),
-  }).eq('user_id', userId).eq('anime_external_id', animeExternalId);
+  const { error } = await supabase.rpc('advance_anime_watch_progress', {
+    p_anime_external_id: animeExternalId,
+    p_episode_index: Math.max(0, Math.floor(episodeIndex)),
+    p_episode_count: Math.max(0, Math.floor(episodeCount)),
+  });
   if (error) throw new Error(error.message);
 }
 

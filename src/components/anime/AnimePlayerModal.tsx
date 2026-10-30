@@ -111,6 +111,7 @@ export function AnimePlayerModal({ anime, onClose, initialEpisodeIndex, initialP
     episodeLabel: selectedEpisode?.ep ?? "",
     positionSeconds: playbackSnapshot.positionSeconds,
     durationSeconds: playbackSnapshot.durationSeconds,
+    episodeCount: anime.episode_count || episodes.length,
   });
 
   const saveProgress = useCallback(() => {
