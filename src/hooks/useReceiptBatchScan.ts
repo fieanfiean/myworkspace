@@ -3,7 +3,7 @@ import imageCompression from 'browser-image-compression';
 import { checkDuplicateTransaction, type DuplicateCheckResult, type ParsedOCRResult } from '@/lib/deduplication';
 import { parseReceipt } from '@/services/budgetService';
 import { uploadToR2 } from '@/services/storageService';
-import { categoriesForType, type BudgetTransaction, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
+import { normalizeCategory, type BudgetTransaction, type NewBudgetTransaction, type TransactionType } from '@/types/budget';
 
 export const MAX_RECEIPT_IMAGES = 3;
 const RECEIPT_SCAN_CONCURRENCY = 3;
@@ -30,7 +30,7 @@ interface ReceiptOCRResult extends ParsedOCRResult {
   currency: 'MYR';
   transaction_time: string;
   type: TransactionType;
-  suggested_category: 'Groceries' | 'Food' | 'Transport' | 'Utilities' | 'Entertainment' | 'Healthcare' | 'Other';
+  suggested_category: string;
 }
 
 interface ReceiptBatchResult { transactions: ReceiptOCRResult[] }
@@ -74,11 +74,7 @@ async function invokeErrorMessage(error: unknown, messages: ReceiptScanMessages)
 }
 
 function mapReceiptResult(item: ReceiptOCRResult, imageId: string, index: number, existingTransactions: BudgetTransaction[]): ReceiptReviewTransaction {
-  const normalizedCategory = item.suggested_category.toLocaleLowerCase();
-  const suggestedCategory = normalizedCategory === 'other' ? 'other_expense' : normalizedCategory as TransactionCategory;
-  const category = categoriesForType(item.type).includes(suggestedCategory)
-    ? suggestedCategory
-    : item.type === 'income' ? 'other_income' : 'other_expense';
+  const category = normalizeCategory(item.suggested_category, item.type);
   const parsed: ParsedOCRResult = {
     amount: item.amount,
     date: item.date,

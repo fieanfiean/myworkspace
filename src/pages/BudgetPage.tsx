@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type UIEvent } from 'react';
-import { AlertTriangle, ArrowUpRight, Banknote, BookOpen, CalendarDays, Camera, Car, CircleDollarSign, Clapperboard, Dumbbell, Gift, HeartPulse, LoaderCircle, Plane, Plus, ReceiptText, Search, Shirt, ShoppingCart, Utensils, WalletCards, X, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Banknote, BookOpen, CalendarDays, Camera, Car, CircleDollarSign, Clapperboard, Gift, HeartPulse, LoaderCircle, Plus, ReceiptText, Search, ShoppingCart, Utensils, X, Zap } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
@@ -38,31 +39,19 @@ function AnimatedCurrency({ value, format }: { value: number; format: (amount: n
   return <>{format(display)}</>;
 }
 const categoryStyle: Record<TransactionCategory, { icon: typeof CircleDollarSign; classes: string }> = {
-  salary: { icon: CircleDollarSign, classes: 'bg-emerald-500/15 text-emerald-400' },
-  bonus: { icon: ArrowUpRight, classes: 'bg-lime-500/15 text-lime-400' },
-  red_packet: { icon: Banknote, classes: 'bg-red-500/15 text-red-400' },
-  allowance: { icon: WalletCards, classes: 'bg-teal-500/15 text-teal-400' },
-  investment: { icon: ArrowUpRight, classes: 'bg-blue-500/15 text-blue-400' },
-  other_income: { icon: CircleDollarSign, classes: 'bg-cyan-500/15 text-cyan-400' },
-  groceries: { icon: ShoppingCart, classes: 'bg-orange-500/15 text-orange-400' },
-  food: { icon: Utensils, classes: 'bg-amber-500/15 text-amber-400' },
-  transport: { icon: Car, classes: 'bg-violet-500/15 text-violet-400' },
-  utilities: { icon: Zap, classes: 'bg-sky-500/15 text-sky-400' },
-  entertainment: { icon: Clapperboard, classes: 'bg-pink-500/15 text-pink-400' },
-  freelance: { icon: Banknote, classes: 'bg-cyan-500/15 text-cyan-400' },
-  healthcare: { icon: HeartPulse, classes: 'bg-rose-500/15 text-rose-400' },
-  shopping: { icon: ShoppingCart, classes: 'bg-fuchsia-500/15 text-fuchsia-400' },
-  other_expense: { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' },
-  bills: { icon: Zap, classes: 'bg-sky-500/15 text-sky-400' },
-  clothing: { icon: Shirt, classes: 'bg-pink-500/15 text-pink-400' },
-  education: { icon: BookOpen, classes: 'bg-blue-500/15 text-blue-400' },
-  fitness: { icon: Dumbbell, classes: 'bg-lime-500/15 text-lime-400' },
-  gifts: { icon: Gift, classes: 'bg-fuchsia-500/15 text-fuchsia-400' },
-  health: { icon: HeartPulse, classes: 'bg-rose-500/15 text-rose-400' },
-  others: { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' },
-  tips: { icon: Banknote, classes: 'bg-emerald-500/15 text-emerald-400' },
-  transportation: { icon: Car, classes: 'bg-violet-500/15 text-violet-400' },
-  travel: { icon: Plane, classes: 'bg-cyan-500/15 text-cyan-400' },
+  'Salary': { icon: CircleDollarSign, classes: 'bg-emerald-500/15 text-emerald-400' },
+  'Bonus & Allowance': { icon: ArrowUpRight, classes: 'bg-lime-500/15 text-lime-400' },
+  'Freelance & Investment': { icon: Banknote, classes: 'bg-cyan-500/15 text-cyan-400' },
+  'Gifts & Tips': { icon: Gift, classes: 'bg-fuchsia-500/15 text-fuchsia-400' },
+  'Other Income': { icon: CircleDollarSign, classes: 'bg-cyan-500/15 text-cyan-400' },
+  'Food & Dining': { icon: Utensils, classes: 'bg-amber-500/15 text-amber-400' },
+  'Transport & Fuel': { icon: Car, classes: 'bg-violet-500/15 text-violet-400' },
+  'Bills & Utilities': { icon: Zap, classes: 'bg-sky-500/15 text-sky-400' },
+  'Shopping': { icon: ShoppingCart, classes: 'bg-fuchsia-500/15 text-fuchsia-400' },
+  'Health & Fitness': { icon: HeartPulse, classes: 'bg-rose-500/15 text-rose-400' },
+  'Education': { icon: BookOpen, classes: 'bg-blue-500/15 text-blue-400' },
+  'Entertainment': { icon: Clapperboard, classes: 'bg-pink-500/15 text-pink-400' },
+  'Others': { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' },
 };
 const fallbackCategoryStyle = { icon: ReceiptText, classes: 'bg-slate-500/15 text-slate-300' };
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -99,7 +88,17 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const { transactions, loading, error, addTransaction, addTransactions, updateTransaction, deleteTransaction } = useBudgetTransactions(user?.id);
-  const [form, setForm] = useState<NewBudgetTransaction>({ type: 'expense', amount: 0, description: '', transactionDate: today(), transaction_time: '', category: 'groceries', originalCurrency: baseCurrency, exchangeRate: 1 });
+  const [form, setForm] = useState<NewBudgetTransaction>({ type: 'expense', amount: 0, description: '', transactionDate: today(), transaction_time: '', category: expenseCategories[0], originalCurrency: baseCurrency, exchangeRate: 1 });
+  const [isManualMode, setIsManualMode] = useState(false);
+  const reduceMotion = useReducedMotion();
+  const manualButtonRef = useRef<HTMLButtonElement>(null);
+  const backButtonRef = useRef<HTMLButtonElement>(null);
+  const previousManualMode = useRef(false);
+  useEffect(() => {
+    if (previousManualMode.current === isManualMode) return;
+    previousManualMode.current = isManualMode;
+    (isManualMode ? backButtonRef : manualButtonRef).current?.focus({ preventScroll: true });
+  }, [isManualMode]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [loadingRate, setLoadingRate] = useState(false);
@@ -170,6 +169,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
   const applySingleResult = (rows: ReceiptReviewTransaction[]) => {
     if (receiptImages.length !== 1 || rows.length !== 1) return false;
     setForm(rows[0].transaction);
+    setIsManualMode(true);
     setDuplicateMatch(rows[0].duplicate);
     setRateError(null);
     return true;
@@ -424,19 +424,22 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
       </div>
 
       <button type="button" aria-label={t('sidebar.closeTools')} onClick={onCloseTools} className={`fixed inset-0 z-[55] bg-slate-950/60 backdrop-blur-sm transition-opacity md:hidden ${toolsOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}/>
-      <aside data-swipe-drawer="right" className={`fixed inset-y-0 right-0 z-[60] w-[min(22rem,calc(100vw-2rem))] touch-pan-y overflow-y-auto overscroll-x-contain border-l border-slate-800 bg-slate-900 p-5 shadow-2xl transition-transform duration-300 md:static md:z-auto md:w-auto md:translate-x-0 md:overflow-visible md:rounded-2xl md:border md:bg-slate-900/80 md:shadow-xl md:shadow-black/10 xl:sticky xl:top-6 ${toolsOpen ? 'translate-x-0' : 'translate-x-full'}`}><div className="mb-5 flex items-center gap-3"><span className="rounded-xl bg-indigo-500/15 p-2 text-indigo-400"><Plus size={19}/></span><div className="min-w-0 flex-1"><h2 className="font-semibold text-white">{t('budget.form.title')}</h2><p className="text-xs text-slate-500">{t('budget.form.subtitle')}</p></div><button type="button" onClick={onCloseTools} aria-label={t('sidebar.closeTools')} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-800 md:hidden"><X size={20}/></button></div>
-        <form className="relative space-y-5" aria-busy={scanningReceipt} onSubmit={event => void submit(event)}>
+      <aside data-swipe-drawer="right" className={`fixed inset-y-0 right-0 z-[60] w-[min(22rem,calc(100vw-2rem))] flex max-h-dvh flex-col touch-pan-y overflow-hidden overscroll-x-contain border-l border-slate-800 bg-slate-900 p-5 shadow-2xl transition-transform duration-300 md:static md:z-auto md:w-auto md:translate-x-0 md:max-h-[calc(100dvh-3rem)] md:overflow-hidden md:rounded-2xl md:border md:bg-slate-900/80 md:shadow-xl md:shadow-black/10 xl:sticky xl:top-6 ${toolsOpen ? 'translate-x-0' : 'translate-x-full'}`}><div className="mb-4 flex shrink-0 items-center gap-3">{isManualMode && <button ref={backButtonRef} type="button" disabled={saving || scanningReceipt} onClick={() => setIsManualMode(false)} aria-label={t('budget.form.back')} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"><ArrowLeft size={20}/></button>}<span className="rounded-xl bg-indigo-500/15 p-2 text-indigo-400"><Plus size={19}/></span><div className="min-w-0 flex-1"><h2 className="font-semibold text-white">{t('budget.form.title')}</h2><p className="text-xs text-slate-500">{t('budget.form.subtitle')}</p></div><button type="button" onClick={onCloseTools} aria-label={t('sidebar.closeTools')} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-800 md:hidden"><X size={20}/></button></div>
+        <form className="relative flex min-h-0 flex-1 flex-col" aria-busy={scanningReceipt} onSubmit={event => void submit(event)}>
           {scanningReceipt && <div className="absolute -inset-2 z-20 flex min-h-full items-start justify-center rounded-xl bg-slate-900/90 px-4 pt-24 backdrop-blur-sm" role="status"><div className="w-full max-w-sm rounded-2xl border border-indigo-500/40 bg-slate-950/95 p-4 shadow-2xl"><span className="flex items-center justify-center gap-3 text-sm font-semibold text-indigo-300"><LoaderCircle size={24} className="animate-spin"/>{t('budget.form.scanning')}</span><div className="mt-4 space-y-2">{receiptImages.map(image => <div key={image.id} className="flex items-center gap-3 rounded-lg bg-slate-900 px-3 py-2"><img src={image.previewUrl} alt="" className="size-10 rounded-md object-cover"/><span className="min-w-0 flex-1 truncate text-xs text-slate-300">{image.file.name}</span><span className="shrink-0 text-xs font-semibold text-indigo-300">{t(`budget.scan.status.${image.status}`)}</span></div>)}</div></div></div>}
-          <div className="space-y-3">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-contain pb-1">
+          {!isManualMode && <div className="flex flex-col gap-y-4">
             <div onDragEnter={event => { event.preventDefault(); setDraggingReceipt(true); }} onDragOver={event => event.preventDefault()} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingReceipt(false); }} onDrop={handleReceiptDrop} className={`relative overflow-hidden rounded-2xl border-2 border-dashed p-2 transition ${draggingReceipt ? 'border-indigo-400 bg-indigo-500/20' : 'border-indigo-500/40 bg-indigo-500/5'}`}>
               {(draggingReceipt || scanningReceipt) && <span className="scan-beam pointer-events-none absolute inset-x-2 top-0 z-10 h-px bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_16px_3px_rgba(34,211,238,0.75)]"/>}
             <button type="button" disabled={scanningReceipt || saving} onClick={() => fileInputRef.current?.click()} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-500/60 bg-indigo-500/10 px-4 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60">
               <Camera size={19}/><span>{t('budget.form.scanReceipt')}</span>
             </button>
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" disabled={scanningReceipt || saving} onChange={handleFileSelect}/>
             <p className="text-center text-xs text-slate-500">{t('budget.form.scanHint')}</p>
-          </div>
+            <button ref={manualButtonRef} type="button" disabled={scanningReceipt || saving} aria-expanded={false} aria-controls="budget-manual-fields" aria-describedby="budget-manual-hint" onClick={() => setIsManualMode(true)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-60"><Plus size={19}/>{t('budget.form.addManually')}</button>
+            <p id="budget-manual-hint" className="text-center text-xs text-slate-500">{t('budget.form.manualHint')}</p>
+          </div>}
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" disabled={scanningReceipt || saving} onChange={handleFileSelect}/>
           {selectionMessage && <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">{selectionMessage}</p>}
           {receiptImages.length > 0 && <section className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/50 p-3" aria-label={t('budget.scan.previewTitle')}>
             <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-white">{t('budget.scan.previewTitle')}</h3><p className="mt-1 text-xs text-slate-400">{t('budget.scan.selectedCount', { count: receiptImages.length, max: MAX_RECEIPT_IMAGES })}</p></div><button type="button" disabled={scanningReceipt || saving} onClick={clearBatch} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50">{t('budget.scan.clear')}</button></div>
@@ -455,6 +458,7 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
             </article>; })}</div>
             <button type="button" disabled={saving || selectedTransactions.length === 0} onClick={() => void importBatch()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{saving && <LoaderCircle size={16} className="animate-spin"/>}{t('budget.form.batchImport', { count: selectedTransactions.length })}</button>
           </section>}
+          {isManualMode && <motion.div id="budget-manual-fields" initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.2 }} className="flex flex-col gap-y-4">
           {duplicateMatch?.matchedTransaction && <div role="alert" className="rounded-xl border border-amber-500/70 bg-amber-500/15 p-4 text-amber-100 shadow-lg shadow-amber-950/20"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={21}/><div><p className="font-bold">{t('budget.form.duplicateWarningTitle')}</p><p className="mt-1 text-sm text-amber-200">{t('budget.form.duplicateWarningDesc', { date: duplicateMatch.matchedTransaction.date ?? duplicateMatch.matchedTransaction.transactionDate ?? '', amount: currency.format(duplicateMatch.matchedTransaction.amount), merchant: duplicateMatch.matchedTransaction.description })}</p></div></div></div>}
           <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.type')}</legend><div className="grid grid-cols-2 rounded-xl bg-slate-950 p-1">{(['income', 'expense'] as TransactionType[]).map(type => <button key={type} type="button" onClick={() => setForm(current => ({ ...current, type, category: categoriesForType(type)[0] }))} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${form.type === type ? type === 'income' ? 'bg-emerald-700 text-white shadow' : 'bg-rose-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>{t(`budget.${type}`)}</button>)}</div></fieldset>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -470,7 +474,11 @@ export function BudgetPage({ toolsOpen, onCloseTools }: { toolsOpen: boolean; on
           <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.description')}</span><input required maxLength={160} value={form.description} onChange={event => setForm(current => ({ ...current, description: event.target.value }))} placeholder={t('budget.form.descriptionPlaceholder')} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-indigo-500"/></label>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.date')}</span><span className="relative block"><CalendarDays size={16} className="pointer-events-none absolute left-3 top-3 text-slate-500"/><input required type="date" value={form.transactionDate} onChange={event => setForm(current => ({ ...current, transactionDate: event.target.value }))} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm text-white outline-none focus:border-indigo-500"/></span></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.time')}</span><input type="time" value={form.transaction_time ?? ''} onChange={event => setForm(current => ({ ...current, transaction_time: event.target.value }))} className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500"/></label></div>
           <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">{t('budget.form.category')}</span><select value={form.category} onChange={event => setForm(current => ({ ...current, category: event.target.value as TransactionCategory }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500"><optgroup label={t(`budget.categoryGroups.${form.type}`)}>{categoriesForType(form.type).map(category => <option key={category} value={category}>{t(`budget.categories.${category}`)}</option>)}</optgroup></select></label>
-          <button disabled={saving || loadingRate} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60">{saving ? <LoaderCircle size={17} className="animate-spin"/> : <Plus size={17}/>} {saving ? t('budget.form.saving') : t('budget.form.save')}</button>
+          </motion.div>}
+          </div>
+          {isManualMode && <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-800 bg-slate-900 pt-4 pb-[env(safe-area-inset-bottom)]">
+          <button type="submit" disabled={saving || loadingRate || scanningReceipt} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60">{saving ? <LoaderCircle size={17} className="animate-spin"/> : <Plus size={17}/>} {saving ? t('budget.form.saving') : t('budget.form.save')}</button>
+          </div>}
         </form>
       </aside>
     </div>

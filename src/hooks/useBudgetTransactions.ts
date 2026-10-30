@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createTransaction, createTransactions, deleteTransactionById, fetchTransactions, subscribeToTransactions, updateTransactionById } from '@/services/budgetService';
-import { expenseCategories, incomeCategories, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
+import { normalizeCategory, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionType } from '@/types/budget';
 
 interface TransactionRow {
   id: string;
@@ -10,28 +10,12 @@ interface TransactionRow {
   description: string;
   date: string;
   transaction_time: string | null;
-  category: string;
+  category: unknown;
   created_at: string;
   original_currency: CurrencyCode | null;
   original_amount: number | string | null;
   exchange_rate: number | string | null;
 }
-
-const normalizeCategory = (category: string, type: TransactionType): TransactionCategory => {
-  const normalized = category.trim().toLocaleLowerCase().replace(/[\s-]+/g, '_');
-  const aliases: Record<string, TransactionCategory> = {
-    other: type === 'income' ? 'other_income' : 'others',
-    other_expense: 'others',
-    utilities: 'bills',
-    healthcare: 'health',
-    transport: 'transportation',
-  };
-  const candidate = aliases[normalized] ?? normalized as TransactionCategory;
-  const allowed = type === 'income' ? incomeCategories : expenseCategories;
-  return (allowed as readonly TransactionCategory[]).includes(candidate)
-    ? candidate
-    : type === 'income' ? 'other_income' : 'others';
-};
 
 const fromRow = (row: TransactionRow): BudgetTransaction => ({
   id: row.id,

@@ -1,4 +1,4 @@
-import type { BudgetTransaction, TransactionCategory, TransactionType } from '@/types/budget';
+import type { BudgetTransaction, TransactionCategory, TransactionType } from '../types/budget.ts';
 
 export type DateRangePreset = 'all' | 'week' | 'month' | 'threeMonths' | 'custom';
 export type TransactionTypeFilter = 'all' | TransactionType;

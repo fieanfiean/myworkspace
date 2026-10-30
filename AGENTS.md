@@ -1,6 +1,13 @@
-# My Workspace Agent Context & Project Memory
+# Repository Instructions & Project Memory
 
 > **IMPORTANT FOR AI AGENTS**：每次完成功能、数据库 Schema、API 接口、架构重构或新增页面后，都必须同步更新本文件。项目只维护这一份 Agent 上下文文件。
+
+
+## Protected environment files
+
+- Never read, edit, overwrite, delete, rename, format, stage, or commit `.env.staging` or `.env.production`.
+- When changing code, ensure these two files remain completely untouched.
+- Never include either file in any Git commit. Before committing, verify that neither file is staged or modified.
 
 ---
 
@@ -40,7 +47,6 @@
 - Production 部署命令：`npm run deploy:prod`（内部执行 `npm run build:prod` + `npx netlify deploy --prod --dir dist --no-build`）。
 - Staging 地址：`https://staging--fieanfieanworkspace.netlify.app`。
 - Production 地址：`https://fieanfieanworkspace.netlify.app`。
-- **部署触发规则**：禁止每次修改代码都自动执行部署。仅在用户显式要求部署，或需要验证 PWA / 线上环境特定功能时才执行对应的部署脚本。部署时必须保留 `--no-build` 参数，确保 0 构建分钟数消耗。
 - 当受命执行部署任务时，须在完成后报告部署结果及控制台返回的链接；若遇到认证或网络失败，如实报告阻塞原因。
 
 ## 4. 当前应用架构
@@ -74,26 +80,33 @@
 
 ### B. Budget Tracker
 
+- Add Transaction starts with Scan Receipt / History and Add Manually actions. Manual mode reveals the existing fields with a reduced-motion-aware transition, a Back button that preserves entered values, and a persistent Save footer outside the scrolling fields. Single receipt results open manual mode automatically; batch review remains available in the scan flow.
+
 - The dashboard's primary summary section contains filtered total income, total expense, net balance, and top expense categories. Its shared date filter defaults to the current month, and the summary and transaction list update together when filters change.
 - The Income vs Expenses chart uses independent rolling windows of 30 days, 18 weeks, or 12 months. It pins the Y-axis, opens at the newest period, and progressively prepends older client-loaded history when scrolled to the left while preserving the viewport.
 - Summary amounts animate between values and use pulse skeletons during transaction loading. The receipt OCR control accepts click or drag-and-drop images and displays a looping scan-beam treatment while dragging/scanning.
 - Budget summary cards retain semantic ambient gradients: Emerald for income, Rose for expense, and Indigo for net balance.
 
 - 核心表：`public.transactions`，字段包含 `profile_id`、`type`、MYR 基准 `amount`、描述、日期、可选 `transaction_time`、分类及原币信息。
-- 类别：Salary、Groceries、Food、Transport、Utilities、Entertainment、Freelance、Healthcare、Other。
+- Expense categories: Food & Dining, Transport & Fuel, Bills & Utilities, Shopping, Health & Fitness, Education, Entertainment, Others.
+- Income categories: Salary, Bonus & Allowance, Freelance & Investment, Gifts & Tips, Other Income.
+- Categories use the exact unified English names as canonical values. Normalize legacy DB strings with `normalizeCategory` when loading transactions, before summaries, charts, filters, lists, or editing. Create/update payloads also normalize categories, so saving an old record writes its unified name; unknown or missing values fall back to Others / Other Income.
+- Category definitions and legacy normalization live in `src/types/budget.ts`; Add Transaction, editing, filters, and receipt scanning must reuse these constants. Localized labels live in `src/i18n.ts`.
 - 支持新增、编辑、删除和 Supabase Realtime 多端同步；编辑/删除均按 `id + profile_id` 限定。
 - Canonical UPDATE RLS Policy：`Users can update their own transactions`，同时包含 `USING` 与 `WITH CHECK (auth.uid() = profile_id)`。
 - Dashboard 展示总余额、本月收入、本月支出及环比变化。
 - 支持描述/本地化类别搜索、类别筛选、收支类型筛选，以及本周、本月、近三个月和自定义日期范围。
-- 同一份 `filteredTransactions` 同时驱动交易列表、统计图表和匹配数量，避免 UI 数据口径不一致。
+- Shared filters drive the summary, transaction list, and matching count; the Income vs Expenses chart uses the independent rolling windows described above.
 - Recharts Area Chart 支持日/周/月聚合；横向视口支持原生触控和鼠标拖动，不使用 Recharts `Brush`。
 - 基准币种为 MYR；支持 MYR、USD、SGD、JPY、EUR、GBP、CNY、THB、TWD。
 - `amount` 保存折算后的 MYR 金额；`original_currency`、`original_amount`、`exchange_rate` 保存原币信息。
 - 外币汇率来自无 Key 的 Open ExchangeRate-API，以 MYR 报价倒数换算成“1 单位外币对应 MYR”；内存缓存请求结果，失败时允许手动输入并显示来源及错误提示。
-- `supabase/functions/parse-receipt` 接收 FormData、JSON/data URL base64、纯 base64 或原始图片，通过 `GEMINI_API_KEY` 调用当前 GA 的 `gemini-3.7-flash` 多模态模型。Gemini 必须始终返回 `{ transactions: [...] }`，Edge Function 对数组内每笔 MYR 交易逐项严格校验，并最多接受 100 笔；既支持单张收据，也支持银行 / eWallet 交易历史截图。端点必须使用 `/models/${MODEL_NAME}:generateContent` 的冒号语法。Gemini API Key 必须先 `trim()`，仅通过 URL 的 `?key=` query parameter 发送，禁止作为 `Authorization: Bearer` header。函数必须保持全局 try/catch、所有响应的 CORS headers、缺少 Secret 时的明确 500 JSON，以及 Gemini JSON / markdown code fence 清理。Quick Add 顶部通过显式按钮触发标准 `accept="image/*"` 隐藏文件输入（不设置 `capture`），图片先压缩至目标 1MB、最长边 1920px；单笔结果自动填入表单，多笔结果显示可勾选预览，可能重复项默认不选，确认后通过一次 Supabase insert 批量写入并只刷新一次。
+- `supabase/functions/parse-receipt` 接收 FormData、JSON/data URL base64、纯 base64 或原始图片，通过 `GEMINI_API_KEY` 调用`MODEL_NAME` (`gemini-3.5-flash-lite`) 多模态模型。Gemini 必须始终返回 `{ transactions: [...] }`，Edge Function 对数组内每笔 MYR 交易逐项严格校验，并最多接受 100 笔；既支持单张收据，也支持银行 / eWallet 交易历史截图。端点必须使用 `/models/${MODEL_NAME}:generateContent` 的冒号语法。Gemini API Key 必须先 `trim()`，仅通过 URL 的 `?key=` query parameter 发送，禁止作为 `Authorization: Bearer` header。函数必须保持全局 try/catch、所有响应的 CORS headers、缺少 Secret 时的明确 500 JSON，以及 Gemini JSON / markdown code fence 清理。Quick Add 顶部通过显式按钮触发标准 `accept="image/*"` 隐藏文件输入（不设置 `capture`），图片先压缩至目标 1MB、最长边 1920px；单笔结果自动填入表单，多笔结果显示可勾选预览，可能重复项默认不选，确认后通过一次 Supabase insert 批量写入并只刷新一次。
 - `src/lib/deduplication.ts` 提供纯函数 OCR 交易去重：金额误差 `< 0.01`、同日期、双方有时间时相差不超过 5 分钟，并结合标准化子串与 Dice coefficient 商户名相似度；返回最强匹配及 0–1 分数。
 - OCR 填充后立即执行去重；命中时在表单顶部显示现有交易的日期、金额和商户警告，但不锁定字段或阻止用户确认保存。
-- 每次 OCR 选择都会重新压缩图片，并在 `finally` 同时清空事件 input 与 `fileInputRef`，保证连续选择同一文件也触发；前端读取 Edge Function 的结构化错误，429/503 显示本地化限流或服务繁忙提示。Edge Function 对 Gemini 429/503 最多额外重试 2 次，每次间隔 1 秒；其他状态立即处理，最终仍失败时透传 Gemini 400–599 状态和安全错误信息，主模型 404 时按兼容要求尝试 `gemini-2.0-flash` fallback。
+- 每次 OCR 选择都会重新压缩图片，并在 `finally` 同时清空事件 input 与 `fileInputRef`，保证连续选择同一文件也触发；前端读取 Edge Function 的结构化错误，429/503 显示本地化限流或服务繁忙提示。Edge Function 对 Gemini 429/503 最多额外重试 2 次，每次间隔 1 秒；其他状态立即处理，最终仍失败时透传 Gemini 400–599 状态和安全错误信息，主模型 404 时按兼容要求尝试 `FALLBACK_MODEL_NAME` (`gemini-3.1-flash-lite`) fallback。
+
+- Receipt OCR Gemini calls use a 25-second request timeout, convert abort/timeout exceptions into retryable or fallback-compatible responses, disable model thinking with a zero thinking budget, and use a fixed 1-second delay between retries.
 
 ### C. 主题与国际化
 
@@ -132,7 +145,7 @@
 - `src/components/layout/Layout.tsx` is the authenticated global shell. It owns the light/dark radial dot grid and responsive Indigo/Sky/Purple ambient orbs, while `.ziwei-layout .rounded-2xl.border` in `index.css` provides the shared translucent glass-card treatment across Profile, Budget, Anime, Notes, and Home.
 
 - `src/pages/AnimePage.tsx` 提供独立的暗色 AniStream 媒体浏览页，通过 Sidebar 的 `Anime Stream` 页签进入；标题搜索及资源类型、地区、题材、状态、年份组合筛选均在 Supabase 服务端执行。TYPE 按 `region_category` 模糊匹配（电影 `%片%`、剧集 `%剧%`、动漫 `%动漫%`、纪录片为 `%记录片%` 或 `%综艺%`），REGION 查询 `area`，YEAR 查询 `year`。列表按 `updated_at DESC` 每页读取 24 条并以 Load More 追加，使用 exact count 判断剩余页。页面包含 300ms 搜索防抖、过期请求防覆盖、可折叠筛选栏、Loading Skeleton、错误重试、组合筛选空状态、动态媒体角标与响应式 2–8 列封面网格，不使用 Featured Hero。
-- `src/components/AnimePlayerModal.tsx` 使用 Safari 原生 HLS 或按需动态加载的 `hls.js` 播放 HTTPS `.m3u8`，支持切集、Escape / 遮罩 / 按钮关闭及 fatal network/media 恢复。
+- `src/components/anime/AnimePlayerModal.tsx` 使用 Safari 原生 HLS 或按需动态加载的 `hls.js` 播放 HTTPS `.m3u8`，支持切集、Escape / 遮罩 / 按钮关闭及 fatal network/media 恢复。
 - Featured `Void Empress` 横幅为项目内原创图片资源 `public/anime/void-empress-hero.png`；卡片封面使用远程图片 URL。
 - `scripts/sync-maccms-anime.ts` 使用仅服务端可用的 `SUPABASE_SERVICE_ROLE_KEY` 和浏览器 User-Agent 分页读取可配置的 MacCMS v10 API，将 HTTPS `.m3u8` 剧集数据按 `external_id` 逐页批量 upsert 到 `public.animes`；MacCMS `type_name` 会去重追加到 `genres`。支持 `--all` 自动读取 `pagecount/total`、逗号分隔或重复的 `--type`、`--delay MS` 节流，以及固定范围的 `--start-page/--pages`；当 `--all` source 为 `t=4` 时自动遍历 4/29/30/31/32/33 六类动漫。
 - `public.animes` Schema 与只读 anon/authenticated RLS 位于 `supabase/migrations/20260912_create_animes.sql`。Service-role key 只能放在被 Git 忽略的 `.env.local` 或进程环境中，禁止使用 `VITE_` 前缀或进入客户端 bundle。
@@ -154,13 +167,12 @@
 3. Mutation 后应确保页面数据、统计与图表同步；优先复用 Hook / `src/lib` 中的纯函数。
 4. 不在组件中复制汇率、筛选、排序、上传等领域逻辑，分别复用 `exchangeRates.ts`、`budgetFilters.ts`、`timelineSort.ts`、`storage.ts`。
 5. 修改完成后至少运行与风险相称的 `npm run lint`、`npm run build` 或目标测试。
-6. 不创建额外的 `AGENTS.md`；项目上下文统一维护在本 `agent.md`。
+6. Maintain repository instructions and project context only in this root `AGENTS.md`; do not recreate `agent.md` or duplicate instruction files.
 
 ## 8. Netlify Deployment Policy
 
 - Deployments must use local CLI-built static assets to preserve zero Netlify Build Minutes consumption. Never rely on Netlify Git-triggered continuous deployment.
 - Never modify Netlify cloud build settings through `netlify.toml` or project configuration.
-- Receipt OCR Gemini calls use a 25-second request timeout, convert abort/timeout exceptions into retryable or fallback-compatible responses, disable model thinking with a zero thinking budget, and use a fixed 1-second delay between retries.
 - 日常开发或修改代码后，默认仅使用 `npm run dev` 进行本地热更新测试；不要主动建议或执行任何部署。
 - 只有用户明确要求“部署到 staging”，或功能必须通过真实线上域名验证（例如 PWA Service Worker、跨域回调）时，才使用 `npm run deploy:staging`。该命令执行 `npm run build:staging`，随后运行 `netlify deploy --alias staging --dir dist --no-build`。
 - 只有用户明确要求“上线”或“部署到 prod”时，才允许使用 `npm run deploy:prod`。该命令执行 `npm run build:prod`，随后运行 `netlify deploy --prod --dir dist --no-build`。

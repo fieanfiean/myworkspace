@@ -1,3 +1,5 @@
+import { categoriesForType, expenseCategories, incomeCategories } from '../../../src/types/budget.ts';
+
 declare const Deno: {
   env: { get(name: string): string | undefined };
   serve(handler: (request: Request) => Response | Promise<Response>): void;
@@ -12,17 +14,7 @@ const corsHeaders = {
 const MODEL_NAME = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL_NAME = 'gemini-3.1-flash-lite';
 
-const allowedCategories = [
-  'Groceries',
-  'Food',
-  'Transport',
-  'Utilities',
-  'Entertainment',
-  'Healthcare',
-  'Other',
-] as const;
-
-type ReceiptCategory = typeof allowedCategories[number];
+type ReceiptCategory = typeof expenseCategories[number] | typeof incomeCategories[number];
 type TransactionType = 'expense' | 'income';
 
 interface ReceiptResult {
@@ -244,7 +236,7 @@ function parseReceipt(value: unknown): ReceiptResult {
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(transactionTime)) throw new RequestError('Gemini returned an invalid time.', 502);
   if (!description) throw new RequestError('Gemini did not identify a merchant or payee.', 502);
   if (type !== 'expense' && type !== 'income') throw new RequestError('Gemini returned an invalid transaction type.', 502);
-  if (typeof category !== 'string' || !allowedCategories.includes(category as ReceiptCategory)) {
+  if (typeof category !== 'string' || !categoriesForType(type).includes(category as ReceiptCategory)) {
     throw new RequestError('Gemini returned an invalid suggested category.', 502);
   }
 
@@ -288,7 +280,7 @@ async function callGemini(apiKey: string, image: { data: string; mimeType: strin
   const geminiPayload = {
       contents: [{
         parts: [
-          { text: 'Analyze this Malaysian receipt, bank/eWallet slip, or transaction-history screenshot and extract transaction data as JSON. Return exactly one object shaped as {"transactions":[{"amount":9,"currency":"MYR","date":"2026-09-08","transaction_time":"12:20","description":"Merchant or payee","type":"expense","suggested_category":"Food"}]}. If it contains a single receipt, return 1 transaction inside the array. If it contains a history list, extract ALL distinct visible transactions in display order. Treat RM as MYR. For a receipt use only the final paid total. Allowed categories are Groceries, Food, Transport, Utilities, Entertainment, Healthcare, and Other. Use 00:00 only if no time is visible. Ignore balances, subtotals, dates, and UI numbers. Never invent text.' },
+          { text: `Analyze this Malaysian receipt, bank/eWallet slip, or transaction-history screenshot and extract transaction data as JSON. Return exactly one object shaped as {"transactions":[{"amount":9,"currency":"MYR","date":"2026-09-08","transaction_time":"12:20","description":"Merchant or payee","type":"expense","suggested_category":"Food & Dining"}]}. If it contains a single receipt, return 1 transaction inside the array. If it contains a history list, extract ALL distinct visible transactions in display order. Treat RM as MYR. For a receipt use only the final paid total. Allowed expense category keys are ${expenseCategories.join(", ")}. Allowed income category keys are ${incomeCategories.join(", ")}. Return the exact unified category name for the transaction type. Use 00:00 only if no time is visible. Ignore balances, subtotals, dates, and UI numbers. Never invent text.` },
           { inlineData: { mimeType, data: cleanBase64 } },
         ],
       }],

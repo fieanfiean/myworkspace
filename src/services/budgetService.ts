@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { NewBudgetTransaction } from '@/types/budget';
+import { normalizeCategory, type NewBudgetTransaction } from '@/types/budget';
 
 export type TransactionDatabaseRow = Record<string, unknown>;
 const columns = 'id,profile_id,type,amount,description,date,transaction_time,category,created_at,original_currency,original_amount,exchange_rate';
@@ -13,7 +13,7 @@ function payload(userId: string, transaction: NewBudgetTransaction) {
     description: transaction.description.trim(),
     date: transaction.transactionDate,
     transaction_time: transaction.transaction_time || null,
-    category: transaction.category,
+    category: normalizeCategory(transaction.category, transaction.type),
     original_currency: transaction.originalCurrency ?? 'MYR',
     original_amount: transaction.originalAmount ?? transaction.amount,
     exchange_rate: transaction.exchangeRate ?? 1,

@@ -3,7 +3,7 @@ import { LoaderCircle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getMyrPerCurrency } from '@/lib/exchangeRates';
 import { ExchangeRateAttribution } from './ExchangeRateAttribution';
-import { categoriesForType, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
+import { categoriesForType, normalizeCategory, type BudgetTransaction, type CurrencyCode, type NewBudgetTransaction, type TransactionCategory, type TransactionType } from '@/types/budget';
 
 const baseCurrency: CurrencyCode = 'MYR';
 const currencies: CurrencyCode[] = ['MYR', 'USD', 'SGD', 'JPY', 'EUR', 'GBP', 'CNY', 'THB', 'TWD'];
@@ -24,7 +24,7 @@ export function TransactionEditModal({ transaction, onClose, onSave }: Transacti
   const [description, setDescription] = useState(transaction.description);
   const [transactionDate, setTransactionDate] = useState(transaction.transactionDate);
   const [transactionTime, setTransactionTime] = useState(transaction.transaction_time ?? '');
-  const [category, setCategory] = useState<TransactionCategory>(transaction.category);
+  const [category, setCategory] = useState<TransactionCategory>(() => normalizeCategory(transaction.category, transaction.type));
   const [loadingRate, setLoadingRate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
